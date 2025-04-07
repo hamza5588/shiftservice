@@ -1,0 +1,6 @@
+Host: localhost
+Port: 3306
+Database: planner_db
+Username: planner_user
+Password: planner_password
+Root Password: rootpassword
