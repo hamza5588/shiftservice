@@ -1,0 +1,1 @@
+ALTER TABLE facturen ADD COLUMN locatie VARCHAR(100) NULL; 

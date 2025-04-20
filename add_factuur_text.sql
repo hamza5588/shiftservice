@@ -1,0 +1,1 @@
+ALTER TABLE facturen ADD COLUMN factuur_text TEXT NULL; 

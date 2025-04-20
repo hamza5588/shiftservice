@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from database import get_db
-from models import Medewerker
+from models import Medewerker, User
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
@@ -35,19 +35,40 @@ class MedewerkerBase(BaseModel):
 class MedewerkerUpdate(MedewerkerBase):
     pass
 
-class MedewerkerResponse(MedewerkerBase):
+class EmployeeResponse(BaseModel):
     id: int
+    username: str
+    email: str
+    full_name: str
+    roles: List[str]
+    personeelsnummer: int
+    uurloner: bool
+    telefoonvergoeding_per_uur: float
+    maaltijdvergoeding_per_uur: float
+    de_minimis_bonus_per_uur: float
+    wkr_toeslag_per_uur: float
+    kilometervergoeding: float
+    max_km: int
+    hourly_allowance: float
+    naam: str
+    telefoon: Optional[str] = None
+    adres: Optional[str] = None
+    geboortedatum: Optional[datetime] = None
+    in_dienst: Optional[datetime] = None
+    uit_dienst: Optional[datetime] = None
+    pas_type: Optional[str] = None
+    pas_nummer: Optional[str] = None
+    pas_vervaldatum: Optional[datetime] = None
+    pas_foto: Optional[str] = None
+    contract_type: Optional[str] = None
+    contract_uren: Optional[int] = None
+    contract_vervaldatum: Optional[datetime] = None
+    contract_bestand: Optional[str] = None
 
     class Config:
         from_attributes = True
-        orm_mode = True
 
-    @classmethod
-    def from_orm(cls, obj):
-        logger.debug(f"Converting Medewerker to response: {obj.__dict__}")
-        return cls(**obj.__dict__)
-
-@router.get("/", response_model=List[MedewerkerResponse])
+@router.get("/", response_model=List[EmployeeResponse])
 async def get_medewerkers(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
@@ -55,16 +76,64 @@ async def get_medewerkers(
     """Get all employees."""
     try:
         logger.debug("Fetching all employees")
-        medewerkers = db.query(Medewerker).all()
+        # Get all medewerkers with their associated users
+        medewerkers = db.query(Medewerker).options(
+            joinedload(Medewerker.user)
+        ).all()
         logger.debug(f"Found {len(medewerkers)} employees")
+        
+        # Convert to the expected format
+        result = []
         for medewerker in medewerkers:
-            logger.debug(f"Employee: {medewerker.naam}, {medewerker.email}")
-        return [MedewerkerResponse.from_orm(medewerker) for medewerker in medewerkers]
+            try:
+                if not medewerker.user:
+                    logger.warning(f"No user found for medewerker {medewerker.id}")
+                    continue
+                    
+                employee_data = EmployeeResponse(
+                    id=medewerker.id,
+                    username=medewerker.user.username,
+                    email=medewerker.email,
+                    full_name=medewerker.naam,
+                    roles=[role.name for role in medewerker.user.roles],
+                    personeelsnummer=medewerker.id,
+                    uurloner=medewerker.contract_type == "Uurloner",
+                    telefoonvergoeding_per_uur=2.0,
+                    maaltijdvergoeding_per_uur=1.5,
+                    de_minimis_bonus_per_uur=0.5,
+                    wkr_toeslag_per_uur=1.0,
+                    kilometervergoeding=0.23,
+                    max_km=60,
+                    hourly_allowance=15.0,
+                    naam=medewerker.naam,
+                    telefoon=medewerker.telefoon,
+                    adres=medewerker.adres,
+                    geboortedatum=medewerker.geboortedatum,
+                    in_dienst=medewerker.in_dienst,
+                    uit_dienst=medewerker.uit_dienst,
+                    pas_type=medewerker.pas_type,
+                    pas_nummer=medewerker.pas_nummer,
+                    pas_vervaldatum=medewerker.pas_vervaldatum,
+                    pas_foto=medewerker.pas_foto,
+                    contract_type=medewerker.contract_type,
+                    contract_uren=medewerker.contract_uren,
+                    contract_vervaldatum=medewerker.contract_vervaldatum,
+                    contract_bestand=medewerker.contract_bestand
+                )
+                result.append(employee_data)
+                logger.debug(f"Employee: {medewerker.naam}, {medewerker.email}")
+            except Exception as e:
+                logger.error(f"Error processing medewerker {medewerker.id}: {str(e)}")
+                continue
+        
+        return result
     except Exception as e:
         logger.error(f"Error fetching employees: {str(e)}")
+        logger.error(f"Error type: {type(e)}")
+        logger.error(f"Error details: {e.__dict__ if hasattr(e, '__dict__') else 'No details available'}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/{medewerker_id}", response_model=MedewerkerResponse)
+@router.get("/{medewerker_id}", response_model=EmployeeResponse)
 async def get_medewerker(
     medewerker_id: int,
     db: Session = Depends(get_db),
@@ -79,7 +148,7 @@ async def get_medewerker(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.put("/{medewerker_id}", response_model=MedewerkerResponse)
+@router.put("/{medewerker_id}", response_model=EmployeeResponse)
 async def update_medewerker(
     medewerker_id: int,
     medewerker_update: MedewerkerUpdate,

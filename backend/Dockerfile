@@ -19,9 +19,15 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p uploaded_facturen uploads/loonstroken
 
+# Make start script executable
+RUN chmod +x start.sh
+
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
 # Expose the port the app runs on
-EXPOSE 8000 
+EXPOSE 8000
+
+# Use the start script as the entry point
+CMD ["./start.sh"] 

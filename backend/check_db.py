@@ -1,4 +1,4 @@
-from database import get_db
+from database import get_db, engine
 from models import Medewerker
 import logging
 
@@ -13,5 +13,13 @@ def check_employees():
     for employee in employees:
         print(f"ID: {employee.id}, Name: {employee.naam}, Email: {employee.email}")
 
+def check_table_schema(table_name):
+    result = engine.execute(f'SHOW COLUMNS FROM {table_name};')
+    columns = result.fetchall()
+    print(f"\nColumns in {table_name}:")
+    for column in columns:
+        print(column)
+
 if __name__ == "__main__":
-    check_employees() 
+    check_employees()
+    check_table_schema('opdrachtgevers') 

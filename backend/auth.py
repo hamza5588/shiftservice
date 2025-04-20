@@ -3,7 +3,7 @@ from typing import Optional, List, Dict
 from fastapi import APIRouter, HTTPException, Depends, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel
-import jwt
+from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from database import get_db
@@ -108,7 +108,7 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: Session = De
         if username is None:
             raise credentials_exception
         token_data = TokenData(username=username)
-    except jwt.JWTError:
+    except JWTError:
         raise credentials_exception
     user = get_user(db, username=token_data.username)
     if user is None:
@@ -159,26 +159,41 @@ async def create_user(
     db: Session = Depends(get_db),
     current_user: dict = Depends(require_roles(["admin"]))
 ):
-    logger.debug(f"Received user creation request: {user.dict()}")
-    logger.debug(f"Role requested: '{user.role}'")
-    
-    # Check if username already exists
-    db_user = db.query(User).filter(User.username == user.username).first()
-    if db_user:
-        logger.warning(f"Username {user.username} already exists")
-        raise HTTPException(status_code=400, detail="Username already registered")
-    
-    # Get the role
-    role = db.query(Role).filter(Role.name == user.role).first()
-    if not role:
-        logger.error(f"Role '{user.role}' not found")
-        raise HTTPException(status_code=404, detail="Role not found")
-    
-    logger.debug(f"Found role: '{role.name}'")
+    logger.info(f"Starting user creation process for username: {user.username}")
+    logger.info(f"Role requested: '{user.role}'")
     
     try:
+        # Start a transaction
+        db.begin()
+        logger.info("Transaction started")
+        
+        # Check if username already exists
+        db_user = db.query(User).filter(User.username == user.username).first()
+        if db_user:
+            logger.warning(f"Username {user.username} already exists")
+            raise HTTPException(status_code=400, detail="Username already registered")
+        
+        # Check if email already exists in both User and Medewerker tables
+        existing_email_user = db.query(User).filter(User.email == user.email).first()
+        if existing_email_user:
+            logger.warning(f"Email {user.email} already exists in users table")
+            raise HTTPException(status_code=400, detail="Email address already registered")
+            
+        existing_email_employee = db.query(Medewerker).filter(Medewerker.email == user.email).first()
+        if existing_email_employee:
+            logger.warning(f"Email {user.email} already exists in medewerkers table")
+            raise HTTPException(status_code=400, detail="Email address already registered")
+        
+        # Get the role
+        role = db.query(Role).filter(Role.name == user.role).first()
+        if not role:
+            logger.error(f"Role '{user.role}' not found")
+            raise HTTPException(status_code=404, detail="Role not found")
+        
+        logger.info(f"Found role: '{role.name}'")
+        
         # Create the user
-        logger.debug("Creating user account...")
+        logger.info("Creating user account...")
         hashed_password = pwd_context.hash(user.password)
         db_user = User(
             username=user.username,
@@ -188,47 +203,78 @@ async def create_user(
         )
         db_user.roles.append(role)
         db.add(db_user)
-        db.commit()
-        db.refresh(db_user)
-        logger.debug(f"Created user account: {db_user.username}")
+        try:
+            db.flush()  # Flush to get the user ID without committing
+            logger.info(f"Successfully created user account: {db_user.username}")
+        except Exception as e:
+            logger.error(f"Failed to create user account: {str(e)}")
+            logger.error(f"Error type: {type(e)}")
+            logger.error(f"Error details: {e.__dict__ if hasattr(e, '__dict__') else 'No details available'}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to create user account: {str(e)}")
         
         # If the role is employee, create an employee profile
-        logger.debug(f"Checking if role is employee. Role name: '{user.role}', Type: {type(user.role)}")
+        logger.info(f"Checking if role is employee. Role name: '{user.role}', Type: {type(user.role)}")
         if user.role.lower() == "employee":
-            logger.debug("Role is employee, creating employee profile...")
-            # Get current date for default values
-            current_date = datetime.utcnow()
-            
-            # Create employee profile with all required fields
-            employee = Medewerker(
-                naam=user.full_name,
-                email=user.email,
-                telefoon="",  # Empty string for optional fields
-                adres="",
-                geboortedatum=current_date,  # Default to current date
-                in_dienst=current_date,
-                uit_dienst=None,  # Nullable field
-                pas_type="Standard",
-                pas_nummer="",  # Empty string for optional fields
-                pas_vervaldatum=current_date,  # Default to current date
-                pas_foto=None,  # Nullable field
-                contract_type="Full-time",
-                contract_uren=40,
-                contract_vervaldatum=None,  # Nullable field
-                contract_bestand=None  # Nullable field
-            )
-            logger.debug(f"Created Medewerker object: {employee.__dict__}")
-            db.add(employee)
+            logger.info("Role is employee, creating employee profile...")
+            try:
+                current_date = datetime.utcnow()
+                employee = Medewerker(
+                    user_id=db_user.username,  # Link to user account
+                    naam=user.full_name,
+                    email=user.email,
+                    telefoon="",  # Default empty
+                    adres="",  # Default empty
+                    geboortedatum=current_date,  # Default to current date
+                    in_dienst=current_date,
+                    uit_dienst=None,  # Not set for new employees
+                    pas_type="Standard",
+                    pas_nummer="",
+                    pas_vervaldatum=current_date,
+                    pas_foto=None,
+                    contract_type="Uurloner",
+                    contract_uren=0,
+                    contract_vervaldatum=None,
+                    contract_bestand=None
+                )
+                logger.info(f"Created Medewerker object: {employee.__dict__}")
+                db.add(employee)
+                try:
+                    db.flush()  # Flush to check for any constraint violations
+                    logger.info(f"Successfully created employee profile for: {db_user.username}")
+                except Exception as e:
+                    logger.error(f"Failed to create employee profile: {str(e)}")
+                    logger.error(f"Error type: {type(e)}")
+                    logger.error(f"Error details: {e.__dict__ if hasattr(e, '__dict__') else 'No details available'}")
+                    db.rollback()
+                    raise HTTPException(status_code=500, detail=f"Failed to create employee profile: {str(e)}")
+            except Exception as e:
+                logger.error(f"Failed to create employee profile: {str(e)}")
+                logger.error(f"Error type: {type(e)}")
+                logger.error(f"Error details: {e.__dict__ if hasattr(e, '__dict__') else 'No details available'}")
+                db.rollback()
+                raise HTTPException(status_code=500, detail=f"Failed to create employee profile: {str(e)}")
+        
+        # Commit the transaction
+        try:
             db.commit()
-            db.refresh(employee)
-            logger.debug(f"Successfully created employee profile with ID: {employee.id}")
-        else:
-            logger.debug(f"Role is '{user.role}', skipping employee profile creation")
+            logger.info("Transaction committed successfully")
+        except Exception as e:
+            logger.error(f"Failed to commit transaction: {str(e)}")
+            logger.error(f"Error type: {type(e)}")
+            logger.error(f"Error details: {e.__dict__ if hasattr(e, '__dict__') else 'No details available'}")
+            db.rollback()
+            raise HTTPException(status_code=500, detail=f"Failed to commit transaction: {str(e)}")
         
         return db_user
-    except Exception as e:
+    except HTTPException:
         db.rollback()
-        logger.error(f"Error creating user/employee: {str(e)}")
+        raise
+    except Exception as e:
+        logger.error(f"Unexpected error in create_user: {str(e)}")
+        logger.error(f"Error type: {type(e)}")
+        logger.error(f"Error details: {e.__dict__ if hasattr(e, '__dict__') else 'No details available'}")
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/roles/", response_model=RoleResponse)
@@ -244,3 +290,18 @@ async def create_role(role: RoleCreate, current_user: dict = Depends(require_rol
 async def get_roles(current_user: dict = Depends(require_roles(["admin"]))):
     db = next(get_db())
     return db.query(Role).all()
+
+@router.delete("/roles/{role_id}", response_model=RoleResponse)
+async def delete_role(role_id: int, current_user: dict = Depends(require_roles(["admin"]))):
+    db = next(get_db())
+    role = db.query(Role).filter(Role.id == role_id).first()
+    if not role:
+        raise HTTPException(status_code=404, detail="Role not found")
+    
+    # Check if role is being used by any users
+    if role.users:
+        raise HTTPException(status_code=400, detail="Cannot delete role that is assigned to users")
+    
+    db.delete(role)
+    db.commit()
+    return role

@@ -90,16 +90,26 @@ def send_shift_registration_email(employee_email: str, shift_details: dict):
     Verstuurt een bevestigingsmail naar de medewerker wanneer hij/zij zich inschrijft voor een dienst.
     (Gebruikt planning@secufy.nl als afzender.)
     """
-    subject = "Bevestiging inschrijving dienst"
+    status = shift_details.get('status', 'requested')
+    status_text = "goedgekeurd" if status == "approved" else "ingediend"
+    
+    subject = f"Bevestiging dienstaanvraag - {status_text}"
     body = (
         f"Beste medewerker,\n\n"
-        f"Je inschrijving voor de dienst op {shift_details.get('shift_date')} bij {shift_details.get('location')} is bevestigd.\n\n"
+        f"Je dienstaanvraag voor de dienst op {shift_details.get('shift_date')} bij {shift_details.get('location')} is {status_text}.\n\n"
         f"Details:\n"
         f"Shift: {shift_details.get('titel', 'Onbekend')}\n"
         f"Start: {shift_details.get('start_time')}\n"
         f"Einde: {shift_details.get('end_time')}\n\n"
-        "Met vriendelijke groet,\nSecufy Planning"
     )
+    
+    if status == "approved":
+        body += "Je dienstaanvraag is automatisch goedgekeurd omdat je:\n"
+        body += "- Een vaste auto-goedkeuring hebt voor deze locatie, of\n"
+        body += "- Eerder ervaring hebt op deze locatie, of\n"
+        body += "- Recent hebt gewerkt op deze locatie en binnen de prioriteitsperiode hebt ingediend\n\n"
+    
+    body += "Met vriendelijke groet,\nSecufy"
 
     msg = MIMEMultipart()
     msg["From"] = PLANNING_SENDER_EMAIL

@@ -1,16 +1,46 @@
 from apscheduler.schedulers.background import BackgroundScheduler
-from datetime import datetime, date
-from facturatie import fake_facturen_db
+from datetime import datetime, date, timedelta
+from facturatie import  Factuur
 from planning import fake_shifts_db
 from betalingsherinneringen import send_payment_reminders
-from tarieven import fake_tarieven_db  # Tarieven per pas-type
+from tarieven import fake_tarieven_db
 import holidays
 import io
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.mime.application import MIMEApplication
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
 from reportlab.lib.styles import getSampleStyleSheet
+from reportlab.lib import colors
+from invoice_payroll import generate_invoice
+from database import get_db
+from models import Opdrachtgever, Shift
+import logging
+import sys
+
+# Configure logging to display in console with timestamp
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
+# Email Configuration
+EMAIL_CONFIG = {
+    'host': 'smtp.gmail.com',
+    'port': 587,
+    'use_tls': True,
+    'username': 'y7hamzakhanswati@gmail.com',
+    'password': 'sbep muwk dinz xsgx',
+    'from_email': 'y7hamzakhanswati@gmail.com'
+}
 
 # BTW-percentage
 VAT_PERCENTAGE = 0.21
@@ -45,178 +75,332 @@ def calculate_shift_hours(start_time, end_time):
 
 
 def generate_invoices():
-    print("{} - Scheduled job: Generating invoices...".format(datetime.now()), flush=True)
-    # Groepeer shifts per locatie
-    locations = {}
-    for shift in fake_shifts_db:
-        loc = shift["location"]
-        if loc not in locations:
-            locations[loc] = []
-        locations[loc].append(shift)
-
-    global next_factuur_id
-    for loc, shifts in locations.items():
-        total_amount = 0.0
-        invoice_text = ""
-        # We koppelen facturen aan opdrachtgever_id 1 in dit voorbeeld
-        opdrachtgever_id = 1
+    """Generate new invoices from shifts."""
+    logger.info(f"{datetime.now()} - Starting invoice generation...")
+    
+    db = next(get_db())
+    try:
+        # Get all shifts that haven't been invoiced yet
+        shifts = db.query(Shift).filter(Shift.factuur_id == None).all()
+        
+        # Group shifts by client
+        shifts_by_client = {}
         for shift in shifts:
-            # Bepaal de shift_date als date-object
-            shift_date = shift["shift_date"]
-            if isinstance(shift_date, str):
-                shift_date = date.fromisoformat(shift_date)
-            # Controleer of de shift op een weekend valt
-            is_weekend = (shift_date.weekday() in [5, 6])
-            # Controleer of de shift op een feestdag valt (dan geldt de feestdag-toeslag)
-            is_holiday = (shift_date in nl_holidays)
-            # Indien de shift op een feestdag valt, gebruiken we de feestdag-toeslag (50% toeslag)
-            # Hierbij nemen we het volledige totaal aantal uren.
-            if is_holiday:
-                holiday_rate = None
-                if shift.get("required_profile"):
-                    for tarief in fake_tarieven_db:
-                        if tarief.get("pas_type", "").lower() == shift["required_profile"].lower():
-                            if tarief.get("opdrachtgever_id") != opdrachtgever_id:
-                                continue
-                            if tarief.get("location") and tarief["location"].lower() != loc.lower():
-                                continue
-                            holiday_rate = tarief["hourly_rate"] * 1.50
-                            break
-                if holiday_rate is None:
-                    holiday_rate = 20.0 * 1.50  # fallback
-                total_hours = sum(calculate_shift_hours(shift["start_time"], shift["end_time"]))
-                shift_total = total_hours * holiday_rate
-                invoice_text += "Datum: {} (Feestdag)\n".format(shift["shift_date"])
-                locatie_titel = shift.get("titel") if shift.get("titel") else loc
-                invoice_text += "Locatie: {}\n".format(locatie_titel)
-                invoice_text += "Totaal uren: {:.2f} uur x €{:.2f} = €{:.2f}\n\n".format(total_hours, holiday_rate,
-                                                                                         shift_total)
-            elif is_weekend:
-                # Weekend: toeslag 35%
-                base_rate = None
-                if shift.get("required_profile"):
-                    for tarief in fake_tarieven_db:
-                        if tarief.get("pas_type", "").lower() == shift["required_profile"].lower():
-                            if tarief.get("opdrachtgever_id") != opdrachtgever_id:
-                                continue
-                            if tarief.get("location") and tarief["location"].lower() != loc.lower():
-                                continue
-                            base_rate = tarief["hourly_rate"]
-                            break
-                if base_rate is None:
-                    base_rate = 20.0
-                total_hours = sum(calculate_shift_hours(shift["start_time"], shift["end_time"]))
-                weekend_rate = base_rate * 1.35
-                shift_total = total_hours * weekend_rate
-                invoice_text += "Datum: {} (Weekend)\n".format(shift["shift_date"])
-                locatie_titel = shift.get("titel") if shift.get("titel") else loc
-                invoice_text += "Locatie: {}\n".format(locatie_titel)
-                invoice_text += "Totaal uren: {:.2f} uur x €{:.2f} = €{:.2f}\n\n".format(total_hours, weekend_rate,
-                                                                                         shift_total)
-            else:
-                # Weekdagdienst: gebruik uitsplitsing dag-, avond- en nachturen
-                base_rate = None
-                if shift.get("required_profile"):
-                    for tarief in fake_tarieven_db:
-                        if tarief.get("pas_type", "").lower() == shift["required_profile"].lower():
-                            if tarief.get("opdrachtgever_id") != opdrachtgever_id:
-                                continue
-                            if tarief.get("location") and tarief["location"].lower() != loc.lower():
-                                continue
-                            base_rate = tarief["hourly_rate"]
-                            break
-                if base_rate is None:
-                    base_rate = 20.0
-                day_hours, evening_hours, night_hours = calculate_shift_hours(shift["start_time"], shift["end_time"])
-                day_rate = base_rate  # 100%
-                evening_rate = base_rate * 1.10  # +10%
-                night_rate = base_rate * 1.20  # +20%
-                day_amount = day_hours * day_rate
-                evening_amount = evening_hours * evening_rate
-                night_amount = night_hours * night_rate
-                shift_total = day_amount + evening_amount + night_amount
-                invoice_text += "Datum: {}\n".format(shift["shift_date"])
-                locatie_titel = shift.get("titel") if shift.get("titel") else loc
-                invoice_text += "Locatie: {}\n".format(locatie_titel)
-                invoice_text += "Daguren: {:.2f} uur x €{:.2f} = €{:.2f}\n".format(day_hours, day_rate, day_amount)
-                invoice_text += "Avonduren: {:.2f} uur x €{:.2f} = €{:.2f}\n".format(evening_hours, evening_rate,
-                                                                                     evening_amount)
-                invoice_text += "Nachturen: {:.2f} uur x €{:.2f} = €{:.2f}\n".format(night_hours, night_rate,
-                                                                                     night_amount)
-                invoice_text += "Totaal voor dienst: €{:.2f}\n\n".format(shift_total)
-            total_amount += shift_total
-
-        vat_amount = total_amount * VAT_PERCENTAGE
-        total_incl_vat = total_amount + vat_amount
-
-        invoice_text += "Subtotaal: €{:.2f}\n".format(total_amount)
-        invoice_text += "BTW (21%): €{:.2f}\n".format(vat_amount)
-        invoice_text += "Totaal incl. BTW: €{:.2f}\n".format(total_incl_vat)
-
-        invoice = {
-            "id": next_factuur_id,
-            "opdrachtgever_id": opdrachtgever_id,
-            "locatie": loc,
-            "factuurdatum": datetime.now().date(),
-            "bedrag": total_incl_vat,
-            "status": "open",
-            "factuur_text": invoice_text
-        }
-        next_factuur_id += 1
-        fake_facturen_db.append(invoice)
-        print("{} - Invoice generated for {}: {}".format(datetime.now(), loc, invoice), flush=True)
-    print("{} - Finished generating invoices.".format(datetime.now()), flush=True)
+            client_id = shift.opdrachtgever_id
+            if client_id not in shifts_by_client:
+                shifts_by_client[client_id] = []
+            shifts_by_client[client_id].append(shift)
+        
+        invoices_generated = 0
+        
+        # Process shifts for each client
+        for client_id, client_shifts in shifts_by_client.items():
+            try:
+                # Get client details from database
+                client = db.query(Opdrachtgever).filter(Opdrachtgever.id == client_id).first()
+                
+                if not client:
+                    logger.warning(f"Client not found for ID: {client_id}")
+                    continue
+                
+                if not client.email:
+                    logger.warning(f"No email address found for client: {client.naam}")
+                    continue
+                
+                # Calculate invoice details
+                total_amount = 0.0
+                invoice_text = []
+                
+                for shift in client_shifts:
+                    # Add shift details to invoice text
+                    shift_date = shift.datum
+                    location = shift.locatie
+                    hours = shift.uren
+                    rate = shift.tarief
+                    amount = hours * rate
+                    total_amount += amount
+                    
+                    invoice_text.append(f"Date: {shift_date}")
+                    invoice_text.append(f"Location: {location}")
+                    invoice_text.append(f"Hours: {hours} x €{rate:.2f} = €{amount:.2f}\n")
+                
+                # Create invoice
+                invoice = Factuur(
+                    opdrachtgever_id=client_id,
+                    opdrachtgever_naam=client.naam,
+                    email=client.email,
+                    kvk_nummer=client.kvk_nummer,
+                    adres=client.adres,
+                    postcode=client.postcode,
+                    stad=client.stad,
+                    telefoon=client.telefoon,
+                    factuurdatum=datetime.now().date(),
+                    bedrag=total_amount,
+                    status='open',
+                    factuur_text='\n'.join(invoice_text)
+                )
+                
+                db.add(invoice)
+                db.flush()  # Get the invoice ID
+                
+                # Update shifts with invoice ID
+                for shift in client_shifts:
+                    shift.factuur_id = invoice.id
+                
+                invoices_generated += 1
+                logger.info(f"Generated invoice for {client.naam} ({client.email})")
+            
+            except Exception as e:
+                logger.error(f"Error generating invoice for client {client_id}: {str(e)}")
+                continue
+        
+        db.commit()
+        logger.info(f"Generated {invoices_generated} new invoices")
+    
+    except Exception as e:
+        logger.error(f"Error in generate_invoices: {str(e)}")
+        db.rollback()
+    finally:
+        db.close()
+    
+    logger.info(f"{datetime.now()} - Finished generating invoices.")
 
 
-scheduler = BackgroundScheduler()
-# Voor testdoeleinden: stel de factuurgeneratie in op interval (bijv. elke 30 seconden)
-scheduler.add_job(generate_invoices, 'interval', seconds=30)
-# Cron-job: betalingsherinneringen dagelijks om 09:00 uur
+def generate_weekly_invoices():
+    """Generate invoices for all opdrachtgevers for the previous week."""
+    logger.info("Starting weekly invoice generation...")
+    
+    # Calculate date range (previous week)
+    today = date.today()
+    last_monday = today - timedelta(days=today.weekday() + 7)
+    last_sunday = last_monday + timedelta(days=6)
+    
+    db = next(get_db())
+    try:
+        # Get all opdrachtgevers
+        opdrachtgevers = db.query(Opdrachtgever).all()
+        
+        for opdrachtgever in opdrachtgevers:
+            try:
+                # Generate invoice for the previous week
+                invoice = generate_invoice(db, opdrachtgever.id, last_monday, last_sunday)
+                if invoice:
+                    logger.info(f"Generated invoice {invoice.factuurnummer} for opdrachtgever {opdrachtgever.id}")
+                else:
+                    logger.warning(f"No invoice generated for opdrachtgever {opdrachtgever.id} - no shifts found")
+            except Exception as e:
+                logger.error(f"Error generating invoice for opdrachtgever {opdrachtgever.id}: {str(e)}")
+                continue
+        
+        db.commit()
+    except Exception as e:
+        logger.error(f"Error in weekly invoice generation: {str(e)}")
+        db.rollback()
+    finally:
+        db.close()
+    
+    logger.info("Weekly invoice generation completed")
+
+
+def create_invoice_pdf(invoice: Factuur) -> bytes:
+    """Create a PDF version of the invoice."""
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
+    styles = getSampleStyleSheet()
+    elements = []
+
+    # Add header
+    elements.append(Paragraph("FACTUUR", styles['Title']))
+    elements.append(Spacer(1, 20))
+
+    # Add invoice details
+    invoice_info = [
+        ["Factuurnummer:", invoice.factuurnummer or str(invoice.id)],
+        ["Datum:", invoice.factuurdatum.strftime("%d-%m-%Y")],
+        ["", ""],
+        ["FACTUUR AAN:", ""],
+        [invoice.opdrachtgever_naam, ""],
+        [f"KVK: {invoice.kvk_nummer}" if invoice.kvk_nummer else "", ""],
+        [invoice.adres or "", ""],
+        [f"{invoice.postcode}, {invoice.stad}" if invoice.postcode and invoice.stad else "", ""],
+        [f"Tel: {invoice.telefoon}" if invoice.telefoon else "", ""],
+        [f"Email: {invoice.email}" if invoice.email else "", ""]
+    ]
+
+    t = Table(invoice_info, colWidths=[200, 300])
+    t.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 12),
+    ]))
+    elements.append(t)
+    elements.append(Spacer(1, 20))
+
+    # Add invoice content
+    if invoice.factuur_text:
+        for line in invoice.factuur_text.split('\n'):
+            elements.append(Paragraph(line, styles['Normal']))
+            elements.append(Spacer(1, 6))
+
+    # Build PDF
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer.getvalue()
+
+def send_invoice_email(invoice: Factuur, pdf_content: bytes):
+    """Send invoice via email."""
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_CONFIG['from_email']
+        msg['To'] = invoice.email
+        msg['Subject'] = f"Factuur #{invoice.factuurnummer or invoice.id} van Secufy"
+
+        # Email body
+        body = f"""Geachte {invoice.opdrachtgever_naam},
+
+Hierbij ontvangt u de factuur #{invoice.factuurnummer or invoice.id}.
+
+Factuurgegevens:
+Bedrag: €{invoice.bedrag:.2f}
+Datum: {invoice.factuurdatum}
+
+Voor vragen kunt u contact met ons opnemen.
+
+Met vriendelijke groet,
+Secufy Team"""
+
+        msg.attach(MIMEText(body, 'plain'))
+
+        # Attach PDF
+        pdf_attachment = MIMEApplication(pdf_content, _subtype='pdf')
+        pdf_attachment.add_header('Content-Disposition', 'attachment', 
+                                filename=f'factuur_{invoice.factuurnummer or invoice.id}.pdf')
+        msg.attach(pdf_attachment)
+
+        # Send email
+        with smtplib.SMTP(EMAIL_CONFIG['host'], EMAIL_CONFIG['port']) as server:
+            server.starttls()
+            server.login(EMAIL_CONFIG['username'], EMAIL_CONFIG['password'])
+            server.send_message(msg)
+
+        print(f"\n{'='*50}")
+        print(f"✅ Invoice #{invoice.factuurnummer or invoice.id} sent successfully")
+        print(f"📧 Sent to: {invoice.email}")
+        print(f"�� Amount: €{invoice.bedrag:.2f}")
+        print(f"📅 Date: {invoice.factuurdatum}")
+        print(f"{'='*50}\n")
+        
+        logger.info(f"Invoice #{invoice.factuurnummer or invoice.id} sent to {invoice.email}")
+        return True
+    except Exception as e:
+        print(f"\n{'='*50}")
+        print(f"❌ Failed to send invoice #{invoice.factuurnummer or invoice.id}")
+        print(f"📧 Recipient: {invoice.email}")
+        print(f"❌ Error: {str(e)}")
+        print(f"{'='*50}\n")
+        
+        logger.error(f"Failed to send invoice email to {invoice.email}: {str(e)}")
+        return False
+
+def process_invoices():
+    """Process all open invoices and send them via email."""
+    logger.info("Starting invoice processing...")
+    
+    db = next(get_db())
+    try:
+        # Get all open invoices
+        open_invoices = db.query(Factuur).filter(Factuur.status == 'open').all()
+        
+        for invoice in open_invoices:
+            try:
+                # Generate PDF
+                pdf_content = create_invoice_pdf(invoice)
+                
+                # Send email
+                if send_invoice_email(invoice, pdf_content):
+                    invoice.status = 'sent'
+                    logger.info(f"Successfully sent invoice {invoice.id} to {invoice.email}")
+                else:
+                    logger.error(f"Failed to send invoice {invoice.id} to {invoice.email}")
+            
+            except Exception as e:
+                logger.error(f"Error processing invoice {invoice.id}: {str(e)}")
+        
+        db.commit()
+        logger.info("Invoice processing completed")
+    
+    except Exception as e:
+        logger.error(f"Error in process_invoices: {str(e)}")
+        db.rollback()
+    finally:
+        db.close()
+
+# Initialize scheduler with timezone
+scheduler = BackgroundScheduler(timezone='Europe/Amsterdam')
+
+# Add jobs with updated interval (10 seconds)
+scheduler.add_job(process_invoices, 'interval', seconds=10)
 scheduler.add_job(send_payment_reminders, 'cron', hour=9, minute=0)
-scheduler.start()
-print("{} - Scheduler started.".format(datetime.now()), flush=True)
+scheduler.add_job(
+    generate_weekly_invoices,
+    'interval',
+    seconds=10,  # Changed from weekly to every 10 seconds
+    id='weekly_invoice_generation'
+)
 
-# PDF Export Router (onderdeel van deze module)
+# Start scheduler
+scheduler.start()
+print(f"\n{'='*50}")
+print("🚀 Scheduler started")
+print("📧 Invoice processing will run every 10 seconds")
+print("📊 Weekly invoice generation will run every 10 seconds")
+print(f"{'='*50}\n")
+logger.info("Scheduler started - Invoice processing and weekly generation set to 10-second intervals")
+
+# PDF Export Router
 pdf_export_router = APIRouter(
     prefix="/pdf-export",
     tags=["pdf-export"]
 )
 
-
 @pdf_export_router.get("/facturen")
 async def export_facturen_pdf():
-    if not fake_facturen_db:
-        raise HTTPException(status_code=404, detail="Geen facturen gevonden om te exporteren")
+    """Export all invoices as PDF."""
+    db = next(get_db())
+    try:
+        facturen = db.query(Factuur).all()
+        if not facturen:
+            raise HTTPException(status_code=404, detail="No invoices found to export")
 
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4)
-    styles = getSampleStyleSheet()
-    elements = []
-    elements.append(Paragraph("Factuuroverzicht", styles['Title']))
-    elements.append(Spacer(1, 12))
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(buffer, pagesize=A4)
+        styles = getSampleStyleSheet()
+        elements = []
 
-    for factuur in fake_facturen_db:
-        factuur_text = factuur.get("factuur_text", "").replace("\n", "<br/>")
-        text = ("Factuur ID: {}<br/>"
-                "Opdrachtgever ID: {}<br/>"
-                "Locatie: {}<br/>"
-                "Factuurdatum: {}<br/>"
-                "Bedrag incl. BTW: €{:.2f}<br/>"
-                "Status: {}<br/><br/>"
-                "Factuur details:<br/>{}<br/><br/>"
-                ).format(
-            factuur.get("id"),
-            factuur.get("opdrachtgever_id"),
-            factuur.get("locatie"),
-            factuur.get("factuurdatum"),
-            factuur.get("bedrag"),
-            factuur.get("status"),
-            factuur_text
-        )
-        elements.append(Paragraph(text, styles['Normal']))
+        elements.append(Paragraph("Factuuroverzicht", styles['Title']))
         elements.append(Spacer(1, 12))
 
-    doc.build(elements)
-    buffer.seek(0)
-    return StreamingResponse(buffer, media_type="application/pdf",
-                             headers={"Content-Disposition": "attachment;filename=facturen.pdf"})
+        for factuur in facturen:
+            elements.append(Paragraph(f"Factuur #{factuur.id}", styles['Heading2']))
+            elements.append(Spacer(1, 6))
+            
+            if factuur.factuur_text:
+                for line in factuur.factuur_text.split('\n'):
+                    elements.append(Paragraph(line, styles['Normal']))
+            elements.append(Spacer(1, 12))
+
+        doc.build(elements)
+        buffer.seek(0)
+        
+        return StreamingResponse(
+            buffer, 
+            media_type="application/pdf",
+            headers={"Content-Disposition": "attachment;filename=facturen.pdf"}
+        )
+    
+    except Exception as e:
+        logger.error(f"Error exporting invoices: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()

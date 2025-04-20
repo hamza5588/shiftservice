@@ -2,17 +2,25 @@
 
 # Wait for MySQL to be ready
 echo "Waiting for MySQL to be ready..."
-while ! nc -z mysql 3306; do
-  sleep 0.1
+max_attempts=30
+attempt=1
+while [ $attempt -le $max_attempts ]; do
+    if mysqladmin ping -h"mysql" -u"planner_user" -p"planner_password" --silent; then
+        echo "MySQL is ready!"
+        break
+    fi
+    echo "Attempt $attempt: MySQL is not ready yet. Waiting..."
+    sleep 2
+    attempt=$((attempt + 1))
 done
-echo "MySQL is ready!"
 
-# Initialize the database
-echo "Initializing database..."
-python init_db.py
+if [ $attempt -gt $max_attempts ]; then
+    echo "Failed to connect to MySQL after $max_attempts attempts. Exiting."
+    exit 1
+fi
 
-# Wait a moment to ensure database operations are complete
-sleep 2
+# Give MySQL a little extra time to fully initialize
+sleep 5
 
 # Start the application
 echo "Starting the application..."

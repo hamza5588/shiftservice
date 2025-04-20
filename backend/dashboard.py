@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from auth import require_roles, get_current_user
 from planning import fake_shifts_db
 from dienstaanvragen import router as dienstaanvragen_router
-from facturatie import fake_facturen_db
 from datetime import datetime, date
 from scheduler import calculate_shift_hours
 from employee_profiles import get_employee_profile
@@ -11,7 +10,7 @@ from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 from database import get_db
 from sqlalchemy.orm import Session
-from models import Dienstaanvraag
+from models import Dienstaanvraag, Factuur
 
 router = APIRouter(
     prefix="/dashboard",
@@ -49,13 +48,14 @@ async def get_dashboard(
 
     factuur_stats = {}
     total_factuur_amount = 0.0
-    for factuur in fake_facturen_db:
-        status = factuur.get("status", "unknown")
+    facturen = db.query(Factuur).all()
+    for factuur in facturen:
+        status = factuur.status or "unknown"
         factuur_stats[status] = factuur_stats.get(status, 0) + 1
         try:
-            total_factuur_amount += float(factuur.get("bedrag", 0))
+            total_factuur_amount += float(factuur.bedrag)
         except Exception as e:
-            print("Fout bij factuur bedrag voor factuur {}: {}".format(factuur.get("id"), e))
+            print("Fout bij factuur bedrag voor factuur {}: {}".format(factuur.id, e))
             continue
 
     dashboard_data = {
@@ -64,7 +64,7 @@ async def get_dashboard(
         "total_shift_hours": total_shift_hours,
         "total_dienstaanvragen": len(dienstaanvragen),
         "dienstaanvraag_stats": aanvraag_stats,
-        "total_facturen": len(fake_facturen_db),
+        "total_facturen": len(facturen),
         "factuur_stats": factuur_stats,
         "total_factuur_amount": total_factuur_amount,
         "timestamp": datetime.now().isoformat()

@@ -1,6 +1,8 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
-from facturatie import fake_facturen_db
+from sqlalchemy.orm import Session
+from database import get_db
+from models import Factuur
 import io
 from openpyxl import Workbook
 
@@ -11,11 +13,14 @@ router = APIRouter(
 
 
 @router.get("/facturen")
-async def export_facturen():
+async def export_facturen(db: Session = Depends(get_db)):
     """
     Exporteer alle facturen naar een Excel-bestand.
     """
-    if not fake_facturen_db:
+    # Get all invoices from database
+    facturen = db.query(Factuur).all()
+    
+    if not facturen:
         raise HTTPException(status_code=404, detail="Geen facturen gevonden om te exporteren")
 
     # Maak een nieuw Excel-werkboek en activeer het eerste blad
@@ -28,13 +33,13 @@ async def export_facturen():
     ws.append(headers)
 
     # Schrijf de factuurgegevens
-    for factuur in fake_facturen_db:
+    for factuur in facturen:
         ws.append([
-            factuur.get("id"),
-            factuur.get("locatie"),
-            str(factuur.get("factuurdatum")),
-            factuur.get("bedrag"),
-            factuur.get("status")
+            factuur.id,
+            factuur.locatie,
+            factuur.factuurdatum.strftime("%Y-%m-%d") if factuur.factuurdatum else "",
+            factuur.bedrag,
+            factuur.status
         ])
 
     # Sla het werkboek op in een in-memory bytes-buffer

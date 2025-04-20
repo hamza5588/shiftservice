@@ -13,9 +13,13 @@ router = APIRouter(
 
 class OpdrachtgeverBase(BaseModel):
     naam: str
+    bedrijfsnaam: Optional[str] = None
+    kvk_nummer: Optional[str] = None
+    adres: Optional[str] = None
+    postcode: Optional[str] = None
+    stad: Optional[str] = None
+    telefoon: Optional[str] = None
     email: str
-    telefoon: str
-    adres: str
 
 class OpdrachtgeverCreate(OpdrachtgeverBase):
     pass

@@ -18,6 +18,7 @@ from pdf_export import router as pdf_export_router
 from verloning import router as verloning_router
 from employee_profiles import employee_profiles_router, payroll_router
 from medewerkers import router as medewerkers_router
+from locations import router as locations_router
 from database import engine
 from models import Base
 from init_db import init_db
@@ -36,11 +37,11 @@ app = FastAPI(
 # Configure CORS - MUST BE BEFORE ANY ROUTES
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080"],  # Frontend origin
+    allow_origins=["http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:3000", "http://127.0.0.1:3000"],  # Frontend origins
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods
-    allow_headers=["*"],  # Allow all headers
-    expose_headers=["*"],  # Expose all headers
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["*"],
+    expose_headers=["*"],
     max_age=3600,  # Cache preflight requests for 1 hour
 )
 
@@ -50,6 +51,16 @@ async def startup_event():
     logger.info("Running database initialization...")
     init_db()
     logger.info("Database initialization completed!")
+
+# Remove the middleware that's causing conflicts
+# @app.middleware("http")
+# async def add_cors_headers(request, call_next):
+#     response = await call_next(request)
+#     response.headers["Access-Control-Allow-Origin"] = "http://localhost:8080"
+#     response.headers["Access-Control-Allow-Credentials"] = "true"
+#     response.headers["Access-Control-Allow-Methods"] = "*"
+#     response.headers["Access-Control-Allow-Headers"] = "*"
+#     return response
 
 @app.get("/")
 async def root():
@@ -75,6 +86,7 @@ app.include_router(pdf_export_router)
 app.include_router(employee_profiles_router)
 app.include_router(payroll_router)
 app.include_router(medewerkers_router)
+app.include_router(locations_router)
 
 # ✅ Start de server correct
 if __name__ == "__main__":
