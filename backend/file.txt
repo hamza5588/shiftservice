@@ -1,3 +1,5 @@
 SERVER_IP="69.28.88.75"
 USERNAME="root"
 PASSWORD="4YnfBLFU4yYXShQ6"
+
+git config --global user.email "y7hamzakhanswati@gmail.com"
