@@ -1,0 +1,1 @@
+ALTER TABLE medewerkers MODIFY COLUMN huisnummer_toevoeging VARCHAR(200); 

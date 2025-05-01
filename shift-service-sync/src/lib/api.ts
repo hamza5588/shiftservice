@@ -1,4 +1,4 @@
-import { Shift, ServiceRequest, Employee, Invoice, PayrollEntry, DashboardStats, CreateInvoicePayload } from './types';
+import { Shift, ServiceRequest, Employee, Invoice, PayrollEntry, DashboardStats, CreateInvoicePayload, Location, Opdrachtgever, LocationRate, LocationRateCreate, EmployeeDashboardData, Role, User } from './types';
 import axios from 'axios';
 
 const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
@@ -14,7 +14,7 @@ export const api = axios.create({
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+    config.headers['Authorization'] = `Bearer ${token}`;
   }
   return config;
 });
@@ -38,10 +38,10 @@ export async function apiRequest<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const token = localStorage.getItem('token');
-  const headers: HeadersInit = {
+  const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    ...options.headers,
+    ...options.headers as Record<string, string>,
   };
 
   // Log the headers (excluding the token for security)
@@ -67,6 +67,7 @@ export async function apiRequest<T>(
       ...options,
       headers,
       credentials: 'include', // Include credentials for CORS
+      mode: 'cors', // Explicitly set CORS mode
     });
 
     console.log(`API response status: ${response.status}`, {
@@ -88,10 +89,26 @@ export async function apiRequest<T>(
         errorData
       });
 
-      // Create a more detailed error message
       let errorMessage = '';
       if (errorData.detail) {
-        errorMessage = errorData.detail;
+        if (Array.isArray(errorData.detail)) {
+          // Handle FastAPI validation errors
+          errorMessage = errorData.detail
+            .map((err: any) => {
+              if (err.loc && err.msg) {
+                const field = err.loc[err.loc.length - 1];
+                return `${field}: ${err.msg}`;
+              }
+              return err.msg || err;
+            })
+            .join('\n');
+        } else if (typeof errorData.detail === 'object') {
+          errorMessage = Object.entries(errorData.detail)
+            .map(([key, value]) => `${key}: ${value}`)
+            .join('\n');
+        } else {
+          errorMessage = errorData.detail;
+        }
       } else if (errorData.message) {
         errorMessage = errorData.message;
       } else if (typeof errorData === 'string') {
@@ -99,7 +116,7 @@ export async function apiRequest<T>(
       } else if (typeof errorData === 'object') {
         errorMessage = Object.entries(errorData)
           .map(([key, value]) => `${key}: ${value}`)
-          .join(', ');
+          .join('\n');
       } else {
         errorMessage = `API request failed with status ${response.status}: ${response.statusText}`;
       }
@@ -129,7 +146,7 @@ export async function apiRequest<T>(
 // API functions for shifts
 export const shiftsApi = {
   getAll: () => apiRequest<Shift[]>('/planning/'),
-  getById: (id: number) => apiRequest<Shift>(`/planning/${id}/`),
+  getById: (id: number) => apiRequest<Shift>(`/planning/${id}`),
   create: (data: Omit<Shift, 'id'>) => apiRequest<Shift>('/planning/', {
     method: 'POST',
     body: JSON.stringify(data)
@@ -175,18 +192,19 @@ export const serviceRequestsApi = {
 
 // API functions for employees
 export const employeesApi = {
-  getAll: async () => {
-    console.log('Fetching all employees...');
-    const result = await apiRequest<Employee[]>('/medewerkers/');
-    console.log('Employees fetched:', result);
-    return result;
-  },
+  getAll: () => apiRequest<Employee[]>('/medewerkers/'),
   getById: (id: string) => apiRequest<Employee>(`/medewerkers/${id}`),
-  create: (employee: Omit<Employee, 'id'>) =>
-    apiRequest<Employee>('/medewerkers/', 'POST', employee),
-  update: (id: string, employee: Partial<Employee>) =>
-    apiRequest<Employee>(`/medewerkers/${id}`, 'PUT', employee),
-  delete: (id: string) => apiRequest<void>(`/medewerkers/${id}`, 'DELETE'),
+  create: (employee: Omit<Employee, 'id'>) => apiRequest<Employee>('/medewerkers/', {
+      method: 'POST',
+      body: JSON.stringify(employee)
+    }),
+  update: (id: string, employee: Partial<Employee>) => apiRequest<Employee>(`/medewerkers/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(employee)
+    }),
+  delete: (id: string) => apiRequest<void>(`/medewerkers/${id}`, {
+    method: 'DELETE'
+  }),
   getMyProfile: () => apiRequest<Employee>('/employee_profiles/my-profile'),
 };
 
@@ -276,10 +294,56 @@ export const invoicesApi = {
 
 // API functions for payroll
 export const payrollApi = {
-  getAll: (year?: number) => apiRequest<PayrollEntry[]>(`/verloning/${year ? `?year=${year}` : ''}`),
+  getAll: () => apiRequest<PayrollEntry[]>('/verloning/'),
+  getById: (id: string) => apiRequest<PayrollEntry>(`/verloning/${id}`),
+  create: (data: Omit<PayrollEntry, 'id'>) => apiRequest<PayrollEntry>('/verloning/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  update: (id: string, data: Partial<PayrollEntry>) => apiRequest<PayrollEntry>(`/verloning/${id}`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  }),
+  delete: (id: string) => apiRequest<void>(`/verloning/${id}`, {
+    method: 'DELETE'
+  }),
   export: (year: number) => apiRequest<Blob>(`/verloning/export?year=${year}`),
   getMyPayroll: (year?: number) => apiRequest<PayrollEntry[]>(`/verloning/my-payroll${year ? `?year=${year}` : ''}`),
-  exportMyPayroll: (year: number) => apiRequest<Blob>(`/verloning/my-payroll/export?year=${year}`),
+  exportMyPayroll: (year: number) => apiRequest<Blob>(`/verloning/my-payroll/export?year=${year}`)
+};
+
+// API functions for locations
+export const locationsApi = {
+  getAll: () => apiRequest<Location[]>('/locations/'),
+  getById: (id: number) => apiRequest<Location>(`/locations/${id}/`),
+  create: (data: Omit<Location, 'id'>) => apiRequest<Location>('/locations/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  update: (id: number, data: Partial<Location>) => apiRequest<Location>(`/locations/${id}/`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  }),
+  delete: (id: number) => apiRequest<void>(`/locations/${id}/`, {
+    method: 'DELETE'
+  })
+};
+
+// API functions for clients
+export const clientsApi = {
+  getAll: () => apiRequest<Opdrachtgever[]>('/opdrachtgevers/'),
+  getById: (id: number) => apiRequest<Opdrachtgever>(`/opdrachtgevers/${id}/`),
+  create: (data: Omit<Opdrachtgever, 'id'>) => apiRequest<Opdrachtgever>('/opdrachtgevers/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  update: (id: number, data: Partial<Opdrachtgever>) => apiRequest<Opdrachtgever>(`/opdrachtgevers/${id}/`, {
+    method: 'PUT',
+    body: JSON.stringify(data)
+  }),
+  delete: (id: number) => apiRequest<void>(`/opdrachtgevers/${id}/`, {
+    method: 'DELETE'
+  })
 };
 
 // API functions for dashboard
@@ -288,296 +352,112 @@ export const dashboardApi = {
   getEmployeeDashboard: () => apiRequest<EmployeeDashboardData>('/dashboard/employee'),
 };
 
-// API functions for users
-export const usersApi = {
-  getAll: () => apiRequest<User[]>('/users/'),
-  getById: (id: string) => apiRequest<User>(`/users/${id}`),
-  create: (user: Omit<User, 'id'>) => apiRequest<User>('/users/', {
+// API functions for location rates
+export const locationRatesApi = {
+  getAll: () => apiRequest<LocationRate[]>('/facturen/location-rates/'),
+  getById: (id: number) => apiRequest<LocationRate>(`/facturen/location-rates/${id}`),
+  create: (data: LocationRateCreate) => apiRequest<LocationRate>('/facturen/location-rates/', {
     method: 'POST',
-    body: JSON.stringify(user)
+    body: JSON.stringify(data)
   }),
-  update: (id: string, user: Partial<User>) => apiRequest<User>(`/users/${id}`, {
+  update: (id: number, data: Partial<LocationRate>) => apiRequest<LocationRate>(`/facturen/location-rates/${id}`, {
     method: 'PUT',
-    body: JSON.stringify(user)
+    body: JSON.stringify(data)
   }),
-  delete: (id: string) => apiRequest<void>(`/users/${id}`, {
+  delete: (id: number) => apiRequest<void>(`/facturen/location-rates/${id}`, {
     method: 'DELETE'
-  }),
-  getCurrentUser: () => apiRequest<User>('/users/me'),
-};
-
-// API functions for roles
-export const rolesApi = {
-  getAll: () => apiRequest<Role[]>('/roles/'),
-  create: (data: Partial<Role>) => 
-    apiRequest<Role>('/roles/', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-  update: (id: number, data: Partial<Role>) =>
-    apiRequest<Role>(`/roles/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
-  delete: (id: number) =>
-    apiRequest<void>(`/roles/${id}/`, {
-      method: 'DELETE',
-    }),
+  })
 };
 
 // API functions for opdrachtgevers (clients)
 export const opdrachtgeversApi = {
   getAll: () => apiRequest<Opdrachtgever[]>('/opdrachtgevers/'),
-  getById: (id: string) => apiRequest<Opdrachtgever>(`/opdrachtgevers/${id}`),
-  create: (opdrachtgever: Omit<Opdrachtgever, 'id'>) =>
-    apiRequest<Opdrachtgever>('/opdrachtgevers/', {
-      method: 'POST',
-      body: JSON.stringify(opdrachtgever)
-    }),
-  update: (id: string, opdrachtgever: Partial<Opdrachtgever>) =>
-    apiRequest<Opdrachtgever>(`/opdrachtgevers/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(opdrachtgever)
-    }),
-  delete: (id: string) => apiRequest<void>(`/opdrachtgevers/${id}`, {
-    method: 'DELETE'
-  }),
-};
-
-// API functions for locations
-export const locationsApi = {
-  getAll: () => apiRequest<Location[]>('/locations/'),
-  getById: (id: string) => apiRequest<Location>(`/locations/${id}`),
-  getByOpdrachtgever: (opdrachtgeverId: string) => 
-    apiRequest<Location[]>(`/locations/opdrachtgever/${opdrachtgeverId}`),
-  create: (location: Omit<Location, 'id'>) => apiRequest<Location>('/locations/', {
+  getById: (id: number) => apiRequest<Opdrachtgever>(`/opdrachtgevers/${id}/`),
+  create: (data: Omit<Opdrachtgever, 'id'>) => apiRequest<Opdrachtgever>('/opdrachtgevers/', {
     method: 'POST',
-    body: JSON.stringify(location)
+    body: JSON.stringify(data)
   }),
-  update: (id: string, location: Partial<Location>) => apiRequest<Location>(`/locations/${id}`, {
+  update: (id: number, data: Partial<Opdrachtgever>) => apiRequest<Opdrachtgever>(`/opdrachtgevers/${id}/`, {
     method: 'PUT',
-    body: JSON.stringify(location)
+    body: JSON.stringify(data)
   }),
-  delete: (id: string) => apiRequest<void>(`/locations/${id}`, {
+  delete: (id: number) => apiRequest<void>(`/opdrachtgevers/${id}/`, {
     method: 'DELETE'
   })
 };
 
-// API functions for location rates
-export const locationRatesApi = {
-  getAll: async () => {
-    try {
-      const response = await api.get<LocationRate[]>('/facturen/location-rates/');
-      return response.data;
-    } catch (error: any) {
-      console.error('Error fetching location rates:', {
-        message: error.message,
-        status: error.response?.status,
-        data: error.response?.data,
-        config: error.config
-      });
-      
-      if (error.response?.data?.detail) {
-        throw new Error(JSON.stringify(error.response.data.detail));
-      }
-      throw error;
-    }
-  },
-  getById: async (id: number) => {
-    try {
-      const response = await api.get<LocationRate>(`/facturen/location-rates/${id}`);
-      return response.data;
-    } catch (error: any) {
-      console.error('Error fetching location rate:', {
-        message: error.message,
-        status: error.response?.status,
-        data: error.response?.data,
-        config: error.config
-      });
-      
-      if (error.response?.data?.detail) {
-        throw new Error(JSON.stringify(error.response.data.detail));
-      }
-      throw error;
-    }
-  },
-  create: async (rate: LocationRateCreate) => {
-    try {
-      const response = await api.post<LocationRate>('/facturen/location-rates', rate);
-      return response.data;
-    } catch (error: any) {
-      console.error('Error creating location rate:', {
-        message: error.message,
-        status: error.response?.status,
-        data: error.response?.data,
-        config: error.config
-      });
-      
-      if (error.response?.data?.detail) {
-        throw new Error(JSON.stringify(error.response.data.detail));
-      }
-      throw error;
-    }
-  },
-  update: async (id: number, rate: Partial<LocationRate>) => {
-    try {
-      const response = await api.put<LocationRate>(`/facturen/location-rates/${id}`, rate);
-      return response.data;
-    } catch (error: any) {
-      console.error('Error updating location rate:', {
-        message: error.message,
-        status: error.response?.status,
-        data: error.response?.data,
-        config: error.config
-      });
-      
-      if (error.response?.data?.detail) {
-        throw new Error(JSON.stringify(error.response.data.detail));
-      }
-      throw error;
-    }
-  },
-  delete: async (id: number) => {
-    try {
-      await api.delete(`/facturen/location-rates/${id}`);
-    } catch (error: any) {
-      console.error('Error deleting location rate:', {
-        message: error.message,
-        status: error.response?.status,
-        data: error.response?.data,
-        config: error.config
-      });
-      
-      if (error.response?.data?.detail) {
-        throw new Error(JSON.stringify(error.response.data.detail));
-      }
-      throw error;
-    }
-  }
-};
-
-// Add User interface
-export interface User {
-  id: number;
-  username: string;
-  email: string;
-  full_name: string;
-  roles: string[];
-}
-
-// Add Role interface
-export interface Role {
-  id: number;
-  name: string;
-  description: string;
-  permissions: string[];
-}
-
-// Add EmployeeDashboardData interface
-export interface EmployeeDashboardData {
-  shifts: Shift[];
-  service_requests: ServiceRequest[];
-  payroll: PayrollEntry;
-  profile: Employee;
-}
-
-export interface CreateInvoicePayload {
-  opdrachtgever_id: number;
-  opdrachtgever_naam: string;
-  locatie: string;
-  factuurdatum: string;
-  bedrag: number;
-  status: string;
-  factuur_text?: string;
-  invoice_number?: string;
-  client_name?: string;
-  issue_date?: string;
-  due_date?: string;
-  total_amount?: number;
-  vat_amount?: number;
-  subtotal?: number;
-  breakdown?: any;
-}
-
-export const createInvoice = async (invoice: InvoiceCreate): Promise<Invoice> => {
-  const response = await fetch(`${baseURL}/facturen/`, {
+// API functions for roles
+export const rolesApi = {
+  getAll: () => apiRequest<Role[]>('/roles/'),
+  create: (data: Partial<Role>) => apiRequest<Role>('/roles/', {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${localStorage.getItem('token')}`
-    },
-    body: JSON.stringify(invoice)
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || 'Failed to create invoice');
-  }
-
-  return response.json();
-};
-
-export const getInvoices = async (): Promise<Invoice[]> => {
-  const response = await fetch(`${baseURL}/facturen/`, {
-    headers: {
-      'Authorization': `Bearer ${localStorage.getItem('token')}`
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch invoices');
-  }
-
-  return response.json();
-};
-
-export const getInvoice = async (id: number): Promise<Invoice> => {
-  const response = await fetch(`${baseURL}/facturen/${id}`, {
-    headers: {
-      'Authorization': `Bearer ${localStorage.getItem('token')}`
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch invoice');
-  }
-
-  return response.json();
-};
-
-export const updateInvoice = async (id: number, invoice: Partial<Invoice>): Promise<Invoice> => {
-  const response = await fetch(`${baseURL}/facturen/${id}`, {
+    body: JSON.stringify(data)
+  }),
+  update: (id: number, data: Partial<Role>) => apiRequest<Role>(`/roles/${id}/`, {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${localStorage.getItem('token')}`
-    },
-    body: JSON.stringify(invoice)
-  });
-
-  if (!response.ok) {
-    const error = await response.json();
-    throw new Error(error.detail || 'Failed to update invoice');
-  }
-
-  return response.json();
-};
-
-export const deleteInvoice = async (id: number): Promise<void> => {
-  const response = await fetch(`${baseURL}/facturen/${id}`, {
-    method: 'DELETE',
-    headers: {
-      'Authorization': `Bearer ${localStorage.getItem('token')}`
-    }
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to delete invoice');
-  }
-};
-
-export const deleteInvoiceByNumber = async (factuurnummer: string): Promise<void> => {
-  return apiRequest<void>(`/invoice-payroll/facturen/nummer/${factuurnummer}`, {
+    body: JSON.stringify(data)
+  }),
+  delete: (id: number) => apiRequest<void>(`/roles/${id}/`, {
     method: 'DELETE'
-  });
+  })
+};
+
+// Chat message types
+export interface ChatMessageCreate {
+  content: string;
+  receiver_id: number;
+  shift_id?: number;
+}
+
+export interface ChatMessageResponse {
+  id: number;
+  sender_id: number;
+  receiver_id: number;
+  content: string;
+  timestamp: string;
+  shift_id?: number;
+  sender_name: string;
+}
+
+// API functions for notifications and chat
+export const notificationsApi = {
+  getUnreadCount: () => apiRequest<number>('/notifications/unread-count/'),
+  getChatHistory: (userId: string) => apiRequest<ChatMessageResponse[]>(`/notifications/chat/history/${userId}/`),
+  sendChatMessage: (data: ChatMessageCreate) => apiRequest<ChatMessageResponse>('/notifications/chat/send/', {
+    method: 'POST',
+    body: JSON.stringify(data)
+  }),
+  markAsRead: (messageId: number) => apiRequest<void>(`/notifications/chat/mark-read/${messageId}/`, {
+    method: 'POST'
+  }),
+  connectToChat: (userId: string, onMessage: (message: ChatMessageResponse) => void) => {
+    const ws = new WebSocket(`${baseURL.replace('http', 'ws')}/notifications/ws/chat/${userId}/`);
+    
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'chat_message') {
+        onMessage(data.message);
+      }
+    };
+
+    ws.onerror = (error) => {
+      console.error('WebSocket error:', error);
+    };
+
+    ws.onclose = () => {
+      console.log('WebSocket connection closed');
+      // Attempt to reconnect after 5 seconds
+      setTimeout(() => {
+        notificationsApi.connectToChat(userId, onMessage);
+      }, 5000);
+    };
+
+    return ws;
+  }
+};
+
+export const usersApi = {
+  getAll: () => apiRequest<User[]>('/users/'),
+  getById: (id: string) => apiRequest<User>(`/users/${id}`),
+  getCurrentUser: () => apiRequest<User>('/users/me')
 };

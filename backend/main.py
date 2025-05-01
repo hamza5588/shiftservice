@@ -19,6 +19,7 @@ from verloning import router as verloning_router
 from employee_profiles import employee_profiles_router, payroll_router
 from medewerkers import router as medewerkers_router
 from locations import router as locations_router
+from notifications import router as notifications_router
 from database import engine
 from models import Base
 from init_db import init_db
@@ -39,9 +40,9 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=["http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:3000", "http://127.0.0.1:3000"],  # Frontend origins
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
-    allow_headers=["*"],
-    expose_headers=["*"],
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+    expose_headers=["*"],  # Expose all headers
     max_age=3600,  # Cache preflight requests for 1 hour
 )
 
@@ -87,6 +88,7 @@ app.include_router(employee_profiles_router)
 app.include_router(payroll_router)
 app.include_router(medewerkers_router)
 app.include_router(locations_router)
+app.include_router(notifications_router)
 
 # ✅ Start de server correct
 if __name__ == "__main__":

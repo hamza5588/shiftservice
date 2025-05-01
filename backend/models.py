@@ -45,16 +45,31 @@ class Medewerker(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(String(50), ForeignKey("users.username"), unique=True, index=True)
     naam = Column(String(100))
+    voornaam = Column(String(100))  # First names
+    tussenvoegsel = Column(String(50), nullable=True)  # Surname prefix
+    achternaam = Column(String(100))  # Surname
+    initialen = Column(String(20))  # Initials
     email = Column(String(100), unique=True, index=True)
     telefoon = Column(String(20))
     adres = Column(String(200))
+    huisnummer = Column(String(10))  # House number
+    huisnummer_toevoeging = Column(String(200), nullable=True)  # Addition to address
+    postcode = Column(String(10))  # Postal code
+    stad = Column(String(100))  # City
     geboortedatum = Column(DateTime)
+    geboorteplaats = Column(String(100))  # Place of birth
+    geslacht = Column(String(20))  # Gender
+    burgerlijke_staat = Column(String(50))  # Marital status
+    bsn = Column(String(9), unique=True)  # BSN number (9 digits)
+    nationaliteit = Column(String(100))  # Nationality
     in_dienst = Column(DateTime)
     uit_dienst = Column(DateTime, nullable=True)
     pas_type = Column(String(50))
     pas_nummer = Column(String(50))
     pas_vervaldatum = Column(DateTime)
-    pas_foto = Column(String(200), nullable=True)
+    pas_foto = Column(String(200), nullable=True)  # Passport photo
+    pas_foto_voorzijde = Column(String(200), nullable=True)  # Passport photo front
+    pas_foto_achterzijde = Column(String(200), nullable=True)  # Passport photo back
     contract_type = Column(String(50))
     contract_uren = Column(Integer)
     contract_vervaldatum = Column(DateTime, nullable=True)
@@ -321,3 +336,19 @@ class LocationRatePydantic(LocationRateBase):
         json_encoders = {
             datetime: lambda dt: dt.isoformat()
         } 
+
+class ChatMessage(Base):
+    __tablename__ = "chat_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content = Column(String, nullable=False)
+    timestamp = Column(DateTime, default=datetime.utcnow)
+    shift_id = Column(Integer, ForeignKey("shifts.id"), nullable=True)
+    read = Column(Boolean, default=False, nullable=False)  # Add read column
+
+    # Relationships
+    sender = relationship("User", foreign_keys=[sender_id], backref="sent_messages")
+    receiver = relationship("User", foreign_keys=[receiver_id], backref="received_messages")
+    shift = relationship("Shift", backref="chat_messages") 

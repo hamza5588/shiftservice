@@ -31,6 +31,34 @@ class EmployeeProfile(BaseModel):
     employee_id: str
     personeelsnummer: int
     naam: str
+    voornaam: str
+    tussenvoegsel: Optional[str] = None
+    achternaam: str
+    initialen: str
+    email: str
+    telefoon: Optional[str] = None
+    adres: str
+    huisnummer: str
+    huisnummer_toevoeging: Optional[str] = None
+    postcode: str
+    stad: str
+    geboortedatum: Optional[date] = None
+    geboorteplaats: Optional[str] = None
+    geslacht: Optional[str] = None
+    burgerlijke_staat: Optional[str] = None
+    bsn: Optional[str] = None
+    nationaliteit: Optional[str] = None
+    in_dienst: Optional[date] = None
+    uit_dienst: Optional[date] = None
+    pas_type: Optional[str] = None
+    pas_nummer: Optional[str] = None
+    pas_vervaldatum: Optional[date] = None
+    pas_foto: Optional[str] = None
+    pas_foto_voorzijde: Optional[str] = None
+    pas_foto_achterzijde: Optional[str] = None
+    contract_type: Optional[str] = None
+    contract_uren: Optional[int] = None
+    contract_vervaldatum: Optional[date] = None
     uurloner: bool
     telefoonvergoeding_per_uur: float
     maaltijdvergoeding_per_uur: float
@@ -84,6 +112,34 @@ async def get_employee_profiles(
                 employee_id=str(employee.id),
                 personeelsnummer=employee.id,
                 naam=employee.naam,
+                voornaam=employee.voornaam,
+                tussenvoegsel=employee.tussenvoegsel,
+                achternaam=employee.achternaam,
+                initialen=employee.initialen,
+                email=employee.email,
+                telefoon=employee.telefoon,
+                adres=employee.adres,
+                huisnummer=employee.huisnummer,
+                huisnummer_toevoeging=employee.huisnummer_toevoeging,
+                postcode=employee.postcode,
+                stad=employee.stad,
+                geboortedatum=employee.geboortedatum,
+                geboorteplaats=employee.geboorteplaats,
+                geslacht=employee.geslacht,
+                burgerlijke_staat=employee.burgerlijke_staat,
+                bsn=employee.bsn,
+                nationaliteit=employee.nationaliteit,
+                in_dienst=employee.in_dienst,
+                uit_dienst=employee.uit_dienst,
+                pas_type=employee.pas_type,
+                pas_nummer=employee.pas_nummer,
+                pas_vervaldatum=employee.pas_vervaldatum,
+                pas_foto=employee.pas_foto,
+                pas_foto_voorzijde=employee.pas_foto_voorzijde,
+                pas_foto_achterzijde=employee.pas_foto_achterzijde,
+                contract_type=employee.contract_type,
+                contract_uren=employee.contract_uren,
+                contract_vervaldatum=employee.contract_vervaldatum,
                 uurloner=True,  # Default value, can be updated based on contract_type
                 telefoonvergoeding_per_uur=2.0,  # Default values, can be moved to database
                 maaltijdvergoeding_per_uur=1.5,
@@ -115,6 +171,34 @@ async def get_employee_profile(
             employee_id=str(employee.id),
             personeelsnummer=employee.id,
             naam=employee.naam,
+            voornaam=employee.voornaam,
+            tussenvoegsel=employee.tussenvoegsel,
+            achternaam=employee.achternaam,
+            initialen=employee.initialen,
+            email=employee.email,
+            telefoon=employee.telefoon,
+            adres=employee.adres,
+            huisnummer=employee.huisnummer,
+            huisnummer_toevoeging=employee.huisnummer_toevoeging,
+            postcode=employee.postcode,
+            stad=employee.stad,
+            geboortedatum=employee.geboortedatum,
+            geboorteplaats=employee.geboorteplaats,
+            geslacht=employee.geslacht,
+            burgerlijke_staat=employee.burgerlijke_staat,
+            bsn=employee.bsn,
+            nationaliteit=employee.nationaliteit,
+            in_dienst=employee.in_dienst,
+            uit_dienst=employee.uit_dienst,
+            pas_type=employee.pas_type,
+            pas_nummer=employee.pas_nummer,
+            pas_vervaldatum=employee.pas_vervaldatum,
+            pas_foto=employee.pas_foto,
+            pas_foto_voorzijde=employee.pas_foto_voorzijde,
+            pas_foto_achterzijde=employee.pas_foto_achterzijde,
+            contract_type=employee.contract_type,
+            contract_uren=employee.contract_uren,
+            contract_vervaldatum=employee.contract_vervaldatum,
             uurloner=True,  # Default value, can be updated based on contract_type
             telefoonvergoeding_per_uur=2.0,  # Default values, can be moved to database
             maaltijdvergoeding_per_uur=1.5,
@@ -145,6 +229,34 @@ async def get_my_profile(
             employee_id=str(employee.id),
             personeelsnummer=employee.id,
             naam=employee.naam,
+            voornaam=employee.voornaam,
+            tussenvoegsel=employee.tussenvoegsel,
+            achternaam=employee.achternaam,
+            initialen=employee.initialen,
+            email=employee.email,
+            telefoon=employee.telefoon,
+            adres=employee.adres,
+            huisnummer=employee.huisnummer,
+            huisnummer_toevoeging=employee.huisnummer_toevoeging,
+            postcode=employee.postcode,
+            stad=employee.stad,
+            geboortedatum=employee.geboortedatum,
+            geboorteplaats=employee.geboorteplaats,
+            geslacht=employee.geslacht,
+            burgerlijke_staat=employee.burgerlijke_staat,
+            bsn=employee.bsn,
+            nationaliteit=employee.nationaliteit,
+            in_dienst=employee.in_dienst,
+            uit_dienst=employee.uit_dienst,
+            pas_type=employee.pas_type,
+            pas_nummer=employee.pas_nummer,
+            pas_vervaldatum=employee.pas_vervaldatum,
+            pas_foto=employee.pas_foto,
+            pas_foto_voorzijde=employee.pas_foto_voorzijde,
+            pas_foto_achterzijde=employee.pas_foto_achterzijde,
+            contract_type=employee.contract_type,
+            contract_uren=employee.contract_uren,
+            contract_vervaldatum=employee.contract_vervaldatum,
             uurloner=True,  # Default value, can be updated based on contract_type
             telefoonvergoeding_per_uur=2.0,  # Default values, can be moved to database
             maaltijdvergoeding_per_uur=1.5,

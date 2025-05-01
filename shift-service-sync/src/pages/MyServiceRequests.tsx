@@ -37,17 +37,22 @@ export default function MyServiceRequests() {
       try {
         console.log('Fetching available shifts...');
         const result = await serviceRequestsApi.getAvailableShifts();
-        console.log('Available shifts result:', result);
+        console.log('Raw available shifts result:', JSON.stringify(result, null, 2));
         
         if (!Array.isArray(result)) {
           throw new Error('Invalid response format: expected an array of shifts');
         }
         
-        // Show all available shifts that are not assigned to the current user
-        return result.filter(shift => {
+        // Show shifts that are either unassigned or assigned to the current user
+        const filteredShifts = result.filter(shift => {
           if (!shift) return false;
-          return shift.employee_id !== currentUser?.username;
+          const isAvailable = !shift.employee_id || shift.employee_id === currentUser?.username;
+          console.log('Shift:', shift.id, 'isAvailable:', isAvailable, 'employee_id:', shift.employee_id, 'currentUser:', currentUser?.username);
+          return isAvailable;
         });
+        
+        console.log('Filtered available shifts:', JSON.stringify(filteredShifts, null, 2));
+        return filteredShifts;
       } catch (error) {
         console.error('Error fetching available shifts:', error);
         if (error instanceof Error) {
@@ -77,11 +82,14 @@ export default function MyServiceRequests() {
 
   const filteredShifts = availableShifts?.filter(shift => {
     const matchesSearch = searchQuery === '' || 
-      (shift.location_details?.naam?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-      (shift.titel?.toLowerCase() || '').includes(searchQuery.toLowerCase());
+      (shift.location?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      (shift.title?.toLowerCase() || '').includes(searchQuery.toLowerCase());
     
+    console.log('Shift:', shift.id, 'matchesSearch:', matchesSearch);
     return matchesSearch;
   }) || [];
+
+  console.log('Final filtered shifts to display:', JSON.stringify(filteredShifts, null, 2));
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -175,12 +183,12 @@ export default function MyServiceRequests() {
                             {shift.start_time} - {shift.end_time}
                           </TableCell>
                           <TableCell>
-                            <div className="font-medium">{shift.location_details?.naam}</div>
+                            <div className="font-medium">{shift.location}</div>
                             <div className="text-xs text-muted-foreground">
-                              {shift.stad}, {shift.provincie}
+                              {shift.location_details?.stad}, {shift.location_details?.provincie}
                             </div>
                           </TableCell>
-                          <TableCell>{shift.titel}</TableCell>
+                          <TableCell>{shift.title}</TableCell>
                           <TableCell>{shift.required_profile}</TableCell>
                           <TableCell>
                             <StatusBadge status={shift.status} />

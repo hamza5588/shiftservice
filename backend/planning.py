@@ -26,6 +26,12 @@ class ShiftBase(BaseModel):
     adres: Optional[str] = None
     required_profile: Optional[str] = None
 
+    class Config:
+        json_encoders = {
+            date: lambda v: v.isoformat() if v else None,
+            time: lambda v: v.strftime("%H:%M") if v else None
+        }
+
 class ShiftCreate(ShiftBase):
     pass
 
@@ -443,7 +449,49 @@ async def get_shift(
     db_shift = db.query(DBShift).filter(DBShift.id == shift_id).first()
     if not db_shift:
         raise HTTPException(status_code=404, detail="Shift not found")
-    return db_shift
+    
+    # Get location details if available
+    location_details = None
+    if db_shift.location:
+        location_details = {
+            "id": db_shift.location.id,
+            "naam": db_shift.location.naam,
+            "adres": db_shift.location.adres,
+            "stad": db_shift.location.stad,
+            "provincie": db_shift.location.provincie
+        }
+    
+    # Convert the shift date to ISO format string
+    shift_date = db_shift.datum
+    if isinstance(shift_date, date):
+        shift_date = shift_date.isoformat()
+    
+    # Safely convert employee_id
+    employee_id = None
+    if db_shift.medewerker_id is not None:
+        employee_id = str(db_shift.medewerker_id)
+    
+    # Create shift data with default values for missing fields
+    shift_data = {
+        "id": db_shift.id,
+        "shift_date": shift_date,
+        "start_time": str(db_shift.start_tijd),
+        "end_time": str(db_shift.eind_tijd),
+        "location_id": db_shift.location_id,
+        "status": db_shift.status,
+        "employee_id": employee_id,
+        "titel": db_shift.titel or "",
+        "stad": db_shift.stad or "",
+        "provincie": db_shift.provincie or "",
+        "adres": db_shift.adres or "",
+        "required_profile": db_shift.required_profile,
+        "location": db_shift.locatie,
+        "location_details": location_details,
+        "reiskilometers": getattr(db_shift, 'reiskilometers', None),  # Safely get reiskilometers if it exists
+        "assigned_by_admin": getattr(db_shift, 'assigned_by_admin', None)  # Safely get assigned_by_admin if it exists
+    }
+    
+    return ShiftResponse(**shift_data)
 
 @router.put("/{shift_id}", response_model=ShiftResponse)
 async def update_shift(
@@ -463,24 +511,40 @@ async def update_shift(
         if not employee:
             raise HTTPException(status_code=404, detail="Medewerker niet gevonden")
 
+    # Format times to HH:MM format
+    start_time = ':'.join(shift_update.start_time.split(':')[:2])  # Keep only hours and minutes
+    end_time = ':'.join(shift_update.end_time.split(':')[:2])
+
     # Update the SQLAlchemy model with the new values
     db_shift.datum = shift_update.shift_date
-    db_shift.start_tijd = shift_update.start_time.strftime("%H:%M")
-    db_shift.eind_tijd = shift_update.end_time.strftime("%H:%M")
+    db_shift.start_tijd = start_time
+    db_shift.eind_tijd = end_time
     db_shift.location_id = shift_update.location_id
     db_shift.status = shift_update.status
+    db_shift.medewerker_id = shift_update.employee_id
+    db_shift.titel = shift_update.titel
+    db_shift.stad = shift_update.stad
+    db_shift.provincie = shift_update.provincie
+    db_shift.adres = shift_update.adres
+    db_shift.required_profile = shift_update.required_profile
 
     db.commit()
     db.refresh(db_shift)
     
     # Convert SQLAlchemy model to Pydantic model for response
     shift = ShiftResponse(
-        shift_date=db_shift.datum,
-        start_time=datetime.strptime(db_shift.start_tijd, "%H:%M").time(),
-        end_time=datetime.strptime(db_shift.eind_tijd, "%H:%M").time(),
+        shift_date=db_shift.datum.isoformat() if isinstance(db_shift.datum, date) else db_shift.datum,
+        start_time=db_shift.start_tijd,
+        end_time=db_shift.eind_tijd,
         location_id=db_shift.location_id,
         status=db_shift.status,
-        id=db_shift.id
+        id=db_shift.id,
+        employee_id=db_shift.medewerker_id,
+        titel=db_shift.titel,
+        stad=db_shift.stad,
+        provincie=db_shift.provincie,
+        adres=db_shift.adres,
+        required_profile=db_shift.required_profile
     )
     
     return shift

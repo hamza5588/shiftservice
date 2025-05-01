@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NavLink } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import {
@@ -23,10 +23,14 @@ import {
   MapPin,
   Building2,
   DollarSign,
+  Bell,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/lib/AuthContext';
 import { hasPermission, hasRole } from '@/lib/permissions';
+import { useQuery } from '@tanstack/react-query';
+import { notificationsApi } from '@/lib/api';
+import { Badge } from '@/components/ui/badge';
 
 type SidebarLink = {
   title: string;
@@ -178,6 +182,14 @@ export function AppSidebar() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const { user, logout } = useAuth();
 
+  // Fetch unread messages count
+  const { data: unreadCount = 0 } = useQuery({
+    queryKey: ['unread_messages'],
+    queryFn: () => notificationsApi.getUnreadCount(),
+    enabled: !!user,
+    refetchInterval: 30000, // Refetch every 30 seconds
+  });
+
   const toggleSidebar = () => {
     setIsSidebarOpen(!isSidebarOpen);
   };
@@ -292,22 +304,48 @@ export function AppSidebar() {
           </nav>
         </div>
 
+        <div className="mt-auto p-4 border-t border-sidebar-border">
+          <NavLink
+            to="/messages"
+            className={({ isActive }) =>
+              cn(
+                "flex items-center space-x-3 px-3 py-2 rounded-md text-sm font-medium transition-colors relative",
+                isActive
+                  ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground"
+              )
+            }
+          >
+            <div className="relative">
+              <Bell className={cn(
+                "h-5 w-5",
+                unreadCount > 0 && "animate-pulse"
+              )} />
+              {unreadCount > 0 && (
+                <Badge 
+                  variant="destructive" 
+                  className="absolute -top-2 -right-2 h-5 w-5 p-0 flex items-center justify-center"
+                >
+                  {unreadCount}
+                </Badge>
+              )}
+            </div>
+            <span>Notifications</span>
+          </NavLink>
+        </div>
+
         <div className="p-4 border-t border-sidebar-border">
-          <div className="flex items-center mb-4">
-            <div className="h-9 w-9 rounded-full bg-sidebar-primary flex items-center justify-center text-sidebar-primary-foreground">
+          <div className="flex items-center space-x-3">
               <User className="h-5 w-5" />
-            </div>
-            <div className="ml-3">
-              <p className="font-medium text-sidebar-foreground">{user?.full_name}</p>
-              <p className="text-xs opacity-70">{user?.email}</p>
-            </div>
+            <span className="text-sm font-medium">{user?.username}</span>
           </div>
           <Button
             variant="ghost"
-            className="w-full justify-start text-sidebar-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground"
+            className="w-full justify-start mt-2"
             onClick={logout}
           >
-            <LogOut className="mr-2 h-4 w-4" /> Sign Out
+            <LogOut className="h-4 w-4 mr-2" />
+            Logout
           </Button>
         </div>
       </aside>

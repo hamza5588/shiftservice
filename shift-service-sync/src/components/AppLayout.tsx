@@ -1,5 +1,5 @@
 import React from 'react';
-import { AppSidebar } from './AppSidebar';
+import { AppSidebar } from './AppSidebar.tsx';
 import { cn } from '@/lib/utils';
 
 interface AppLayoutProps {

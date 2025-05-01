@@ -13,6 +13,7 @@ import ServiceRequests from "./pages/ServiceRequests";
 import Invoicing from "./pages/Invoicing";
 import Payroll from "./pages/Payroll";
 import Employees from "./pages/Employees";
+import EditEmployee from "./pages/EditEmployee";
 import UsersManagement from "./pages/UsersManagement";
 import Profile from "./pages/Profile";
 import Calendar from "./pages/Calendar";
@@ -28,6 +29,9 @@ import Locations from './pages/Locations';
 import AutoApprovalSettings from './pages/AutoApprovalSettings';
 import Clients from './pages/Clients';
 import { LocationRates } from './components/LocationRates';
+import ViewEmployee from '@/pages/ViewEmployee';
+import ShiftDetails from './pages/ShiftDetails';
+import EditShift from './pages/EditShift';
 
 // Create a client
 const queryClient = new QueryClient();
@@ -188,6 +192,26 @@ const App = () => (
               }
             />
             <Route
+              path="/employees/:id/edit"
+              element={
+                <ProtectedRoute requiredPermissions={[Permissions.VIEW_EMPLOYEES]}>
+                  <AppLayout>
+                    <EditEmployee />
+                  </AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/employees/:id/view"
+              element={
+                <ProtectedRoute requiredPermissions={[Permissions.VIEW_EMPLOYEES]}>
+                  <AppLayout>
+                    <ViewEmployee />
+                  </AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
               path="/profile"
               element={
                 <ProtectedRoute requiredPermissions={[Permissions.VIEW_OWN_PROFILE]}>
@@ -294,6 +318,24 @@ const App = () => (
                   <AppLayout>
                     <LocationRates />
                   </AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/shifts/:id"
+              element={
+                <ProtectedRoute requiredPermissions={[Permissions.VIEW_SHIFTS, Permissions.VIEW_OWN_SHIFTS]}>
+                  <AppLayout>
+                    <ShiftDetails />
+                  </AppLayout>
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/shifts/:id/edit"
+              element={
+                <ProtectedRoute requiredPermissions={['view_shifts', 'edit_shifts']}>
+                  <EditShift />
                 </ProtectedRoute>
               }
             />

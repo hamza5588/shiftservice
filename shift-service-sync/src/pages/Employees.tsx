@@ -1,5 +1,6 @@
 import React from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { employeesApi } from '@/lib/api';
 import { 
   Table, 
@@ -35,10 +36,10 @@ import { Employee } from '@/lib/types';
 export default function Employees() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isViewDialogOpen, setIsViewDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
 
   // Query for employees
   const { data: employees, isLoading, error } = useQuery({
@@ -57,26 +58,6 @@ export default function Employees() {
   }, [employees, error]);
 
   // Mutations
-  const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string, data: Partial<Employee> }) => 
-      employeesApi.update(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['employees'] });
-      toast({
-        title: "Success",
-        description: "Employee updated successfully",
-      });
-      setIsEditDialogOpen(false);
-    },
-    onError: (error) => {
-      toast({
-        title: "Error",
-        description: "Failed to update employee",
-        variant: "destructive",
-      });
-    },
-  });
-
   const deleteMutation = useMutation({
     mutationFn: employeesApi.delete,
     onSuccess: () => {
@@ -96,34 +77,24 @@ export default function Employees() {
   });
 
   const filteredEmployees = employees?.filter(employee => {
+    const searchLower = searchQuery.toLowerCase();
     return searchQuery === '' || 
-      employee.naam.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      employee.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (employee.pas_type || '').toLowerCase().includes(searchQuery.toLowerCase());
+      (employee.naam && employee.naam.toLowerCase().includes(searchLower)) ||
+      (employee.email && employee.email.toLowerCase().includes(searchLower)) ||
+      (employee.pas_type && employee.pas_type.toLowerCase().includes(searchLower));
   }) || [];
-
-  const handleUpdateEmployee = (formData: FormData) => {
-    if (!selectedEmployee) return;
-    
-    const updatedEmployee = {
-      naam: formData.get('name') as string,
-      email: formData.get('email') as string,
-      telefoon: formData.get('phone') as string,
-      pas_type: formData.get('passType') as string,
-      adres: formData.get('address') as string,
-    };
-    
-    updateMutation.mutate({ 
-      id: selectedEmployee.id.toString(), 
-      data: updatedEmployee 
-    });
-  };
 
   const handleDeleteEmployee = (id: number) => {
     if (window.confirm('Are you sure you want to delete this employee?')) {
       deleteMutation.mutate(id.toString());
     }
   };
+
+  // Add debug logs
+  React.useEffect(() => {
+    console.log('Employees component mounted');
+    console.log('Current employees data:', employees);
+  }, [employees]);
 
   return (
     <div>
@@ -170,7 +141,7 @@ export default function Employees() {
             <Card key={employee.id} className="hover:shadow-md transition-shadow">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center justify-between">
-                  {employee.naam}
+                  {employee.naam || `${employee.voornaam} ${employee.achternaam}`}
                   <Badge variant="outline" className="bg-secufy-50 text-secufy-800">
                     {employee.pas_type || 'No Pass Type'}
                   </Badge>
@@ -194,8 +165,7 @@ export default function Employees() {
                     variant="ghost" 
                     size="sm"
                     onClick={() => {
-                      setSelectedEmployee(employee);
-                      setIsViewDialogOpen(true);
+                      navigate(`/employees/${employee.id}/view`);
                     }}
                   >
                     <Eye className="h-4 w-4 mr-1" /> View
@@ -204,8 +174,9 @@ export default function Employees() {
                     variant="ghost" 
                     size="sm"
                     onClick={() => {
-                      setSelectedEmployee(employee);
-                      setIsEditDialogOpen(true);
+                      console.log('Edit button clicked for employee:', employee);
+                      console.log('Navigating to:', `/employees/${employee.id}/edit`);
+                      navigate(`/employees/${employee.id}/edit`);
                     }}
                   >
                     <Pencil className="h-4 w-4 mr-1" /> Edit
@@ -227,103 +198,6 @@ export default function Employees() {
           </div>
         )}
       </div>
-
-      {/* View Employee Dialog */}
-      <Dialog open={isViewDialogOpen} onOpenChange={setIsViewDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Employee Details</DialogTitle>
-          </DialogHeader>
-          {selectedEmployee && (
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <label className="font-medium">Name</label>
-                <p>{selectedEmployee.naam}</p>
-              </div>
-              <div className="grid gap-2">
-                <label className="font-medium">Email</label>
-                <p>{selectedEmployee.email}</p>
-              </div>
-              {selectedEmployee.telefoon && (
-                <div className="grid gap-2">
-                  <label className="font-medium">Phone</label>
-                  <p>{selectedEmployee.telefoon}</p>
-                </div>
-              )}
-              {selectedEmployee.pas_type && (
-                <div className="grid gap-2">
-                  <label className="font-medium">Pass Type</label>
-                  <p>{selectedEmployee.pas_type}</p>
-                </div>
-              )}
-              {selectedEmployee.adres && (
-                <div className="grid gap-2">
-                  <label className="font-medium">Address</label>
-                  <p>{selectedEmployee.adres}</p>
-                </div>
-              )}
-              {selectedEmployee.geboortedatum && (
-                <div className="grid gap-2">
-                  <label className="font-medium">Date of Birth</label>
-                  <p>{new Date(selectedEmployee.geboortedatum).toLocaleDateString()}</p>
-                </div>
-              )}
-              {selectedEmployee.in_dienst && (
-                <div className="grid gap-2">
-                  <label className="font-medium">Start Date</label>
-                  <p>{new Date(selectedEmployee.in_dienst).toLocaleDateString()}</p>
-                </div>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* Edit Employee Dialog */}
-      <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Employee</DialogTitle>
-            <DialogDescription>
-              Update the employee details below.
-            </DialogDescription>
-          </DialogHeader>
-          {selectedEmployee && (
-            <form onSubmit={(e) => {
-              e.preventDefault();
-              handleUpdateEmployee(new FormData(e.currentTarget));
-            }}>
-              <div className="grid gap-4 py-4">
-                <div className="grid gap-2">
-                  <label htmlFor="name">Name</label>
-                  <Input id="name" name="name" defaultValue={selectedEmployee.naam} required />
-                </div>
-                <div className="grid gap-2">
-                  <label htmlFor="email">Email</label>
-                  <Input id="email" name="email" type="email" defaultValue={selectedEmployee.email} required />
-                </div>
-                <div className="grid gap-2">
-                  <label htmlFor="phone">Phone</label>
-                  <Input id="phone" name="phone" type="tel" defaultValue={selectedEmployee.telefoon || ''} />
-                </div>
-                <div className="grid gap-2">
-                  <label htmlFor="passType">Pass Type</label>
-                  <Input id="passType" name="passType" defaultValue={selectedEmployee.pas_type || ''} />
-                </div>
-                <div className="grid gap-2">
-                  <label htmlFor="address">Address</label>
-                  <Input id="address" name="address" defaultValue={selectedEmployee.adres || ''} />
-                </div>
-              </div>
-              <DialogFooter>
-                <Button type="submit" disabled={updateMutation.isPending}>
-                  {updateMutation.isPending ? "Updating..." : "Update Employee"}
-                </Button>
-              </DialogFooter>
-            </form>
-          )}
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

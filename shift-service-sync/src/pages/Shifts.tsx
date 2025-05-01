@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { shiftsApi, employeesApi } from '@/lib/api';
 import { 
@@ -38,8 +38,10 @@ import { Shift } from '@/lib/types';
 import { useToast } from '@/components/ui/use-toast';
 import { useAuth } from '@/lib/AuthContext';
 import { hasPermission, Permissions } from '@/lib/permissions';
+import { useNavigate } from 'react-router-dom';
 
 export default function Shifts() {
+  const navigate = useNavigate();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [selectedShift, setSelectedShift] = useState<Shift | null>(null);
@@ -137,10 +139,10 @@ export default function Shifts() {
   };
 
   const filteredShifts = shifts.filter(shift => {
-    // Filter by search query (match location or titel)
+    // Filter by search query (match location or title)
     const matchesSearch = searchQuery === '' || 
-      (shift.location_details?.naam?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
-      (shift.titel?.toLowerCase() || '').includes(searchQuery.toLowerCase());
+      (shift.location_details?.stad?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      (shift.title?.toLowerCase() || '').includes(searchQuery.toLowerCase());
     
     // Filter by selected date
     const matchesDate = !selectedDate || 
@@ -153,25 +155,9 @@ export default function Shifts() {
         // 1. It's assigned to the current user
         shift.employee_id === user?.id ||
         // 2. It's an open shift (no employee assigned)
-        (shift.status === 'open' && !shift.employee_id) ||
-        // 3. It's assigned by admin
-        shift.assigned_by_admin
+        (shift.status === 'open' && !shift.employee_id)
       ));
 
-    // Debug logging
-    console.log('Shift filtering:', {
-      id: shift.id,
-      status: shift.status,
-      employee_id: shift.employee_id,
-      user_id: user?.id,
-      assigned_by_admin: shift.assigned_by_admin,
-      matchesSearch,
-      matchesDate,
-      matchesPermissions,
-      canViewAllShifts,
-      canViewOwnShifts
-    });
-    
     return matchesSearch && matchesDate && matchesPermissions;
   }) || [];
 
@@ -268,10 +254,12 @@ export default function Shifts() {
                     {shift.start_time} - {shift.end_time}
                   </TableCell>
                   <TableCell>
-                    <div className="font-medium">{shift.location_details?.naam}</div>
-                    <div className="text-xs text-muted-foreground">{shift.stad}, {shift.provincie}</div>
+                    <div className="font-medium">{shift.location}</div>
+                    <div className="text-xs text-muted-foreground">
+                      {shift.location_details?.stad}, {shift.location_details?.provincie}
+                    </div>
                   </TableCell>
-                  <TableCell>{shift.titel}</TableCell>
+                  <TableCell>{shift.title}</TableCell>
                   <TableCell>{shift.required_profile}</TableCell>
                   <TableCell>
                     <StatusBadge status={shift.status} />
@@ -706,17 +694,19 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
   );
 }
 
-interface EditShiftDialogProps extends Omit<AddShiftDialogProps, 'open'> {
-  shift: Shift;
+interface EditShiftDialogProps {
   open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess: () => void;
+  shift: Shift;
 }
 
 function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }: EditShiftDialogProps) {
   const { toast } = useToast();
-  const { user } = useAuth();
   const [shift, setShift] = useState<Shift>(initialShift);
   const [date, setDate] = useState<Date>(() => new Date(initialShift.shift_date));
-  const canAssignEmployees = hasPermission(user?.roles || [], Permissions.ASSIGN_EMPLOYEES);
+  const [selectedClientId, setSelectedClientId] = useState<string>(initialShift.opdrachtgever_id?.toString() || '');
+  const [filteredLocations, setFilteredLocations] = useState<Location[]>([]);
 
   // Query for employees
   const { data: employees, isLoading: isLoadingEmployees } = useQuery({
@@ -724,8 +714,7 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
     queryFn: async () => {
       try {
         const result = await employeesApi.getAll();
-        console.log('Fetched employees:', result);
-        return result;
+        return result.filter(employee => employee.roles?.includes('employee'));
       } catch (error) {
         console.error('Error fetching employees:', error);
         return [];
@@ -733,12 +722,48 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
     },
   });
 
-  // Log when employees data changes
-  React.useEffect(() => {
-    if (employees) {
-      console.log('Employees data updated:', employees);
+  // Query for clients (opdrachtgevers)
+  const { data: clients, isLoading: isLoadingClients } = useQuery({
+    queryKey: ['clients'],
+    queryFn: async () => {
+      const response = await fetch('http://localhost:8000/opdrachtgevers/', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch clients');
+      }
+      return response.json();
+    },
+  });
+
+  // Query for locations based on selected client
+  const { data: locations, isLoading: isLoadingLocations } = useQuery({
+    queryKey: ['locations', selectedClientId],
+    queryFn: async () => {
+      if (!selectedClientId) return [];
+      const response = await fetch(`http://localhost:8000/locations/opdrachtgever/${selectedClientId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch locations');
+      }
+      return response.json();
+    },
+    enabled: !!selectedClientId,
+  });
+
+  // Update filtered locations when client changes
+  useEffect(() => {
+    if (selectedClientId && locations) {
+      setFilteredLocations(locations);
+    } else {
+      setFilteredLocations([]);
     }
-  }, [employees]);
+  }, [selectedClientId, locations]);
 
   // Mutation for updating shifts
   const { mutate: updateShift, isPending: isUpdating } = useMutation({
@@ -764,7 +789,7 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
     e.preventDefault();
     
     // Validate required fields
-    if (!shift.shift_date || !shift.start_time || !shift.end_time || !shift.location || !shift.titel) {
+    if (!shift.shift_date || !shift.start_time || !shift.end_time || !shift.location_id || !shift.title) {
       toast({
         title: "Validation Error",
         description: "Please fill in all required fields",
@@ -781,24 +806,83 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
     setShift(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleEmployeeChange = (value: string) => {
-    // Add 1 to the selected ID to match the correct employee
-    const employeeId = value ? (parseInt(value) + 1).toString() : null;
-    handleChange('employee_id', employeeId);
+  const handleClientChange = (clientId: string) => {
+    setSelectedClientId(clientId);
+    handleChange('opdrachtgever_id', Number(clientId));
+    handleChange('location_id', undefined);
+  };
+
+  const handleLocationChange = (locationId: string) => {
+    const location = locations?.find((loc: any) => loc.id.toString() === locationId);
+    handleChange('location_id', Number(locationId));
+    if (location) {
+      handleChange('location', location.naam);
+      handleChange('location_details', {
+        stad: location.stad,
+        provincie: location.provincie,
+        adres: location.adres
+      });
+    }
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[550px]" aria-describedby="edit-shift-description">
+      <DialogContent className="sm:max-w-[550px]">
         <DialogHeader>
           <DialogTitle>Edit Shift</DialogTitle>
         </DialogHeader>
-        <p id="edit-shift-description" className="sr-only">
-          Form to edit an existing shift's details
-        </p>
-
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Client Selection */}
+            <div className="space-y-2">
+              <Label htmlFor="client_id">Client *</Label>
+              <Select
+                value={selectedClientId}
+                onValueChange={handleClientChange}
+                disabled={isLoadingClients}
+              >
+                <SelectTrigger id="client_id">
+                  <SelectValue placeholder={isLoadingClients ? "Loading clients..." : "Select a client"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients?.map((client: any) => (
+                    <SelectItem key={client.id} value={client.id.toString()}>
+                      {client.naam}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Location Selection */}
+            <div className="space-y-2">
+              <Label htmlFor="location_id">Location *</Label>
+              <Select
+                value={shift.location_id?.toString()}
+                onValueChange={handleLocationChange}
+                disabled={isLoadingLocations || !selectedClientId}
+              >
+                <SelectTrigger id="location_id">
+                  <SelectValue 
+                    placeholder={
+                      !selectedClientId 
+                        ? "Select a client first" 
+                        : isLoadingLocations 
+                          ? "Loading locations..." 
+                          : "Select a location"
+                    } 
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredLocations.map((location) => (
+                    <SelectItem key={location.id} value={location.id.toString()}>
+                      {location.naam} - {location.stad}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* Shift Date */}
             <div className="space-y-2">
               <Label htmlFor="shift_date">Date *</Label>
@@ -837,27 +921,22 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
             <div className="space-y-2">
               <Label htmlFor="employee_id">Employee</Label>
               <Select 
-                onValueChange={handleEmployeeChange}
-                disabled={isLoadingEmployees || !canAssignEmployees}
-                value={shift.employee_id?.toString() || ''}
+                value={shift.employee_id || 'unassigned'}
+                onValueChange={(value) => handleChange('employee_id', value === 'unassigned' ? null : value)}
+                disabled={isLoadingEmployees}
               >
                 <SelectTrigger id="employee_id">
                   <SelectValue placeholder={isLoadingEmployees ? "Loading..." : "Select employee"} />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Unassigned</SelectItem>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
                   {employees?.map((employee) => (
-                    <SelectItem key={employee.id} value={employee.id.toString()}>
+                    <SelectItem key={employee.id} value={employee.username}>
                       {employee.full_name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {!canAssignEmployees && (
-                <p className="text-sm text-muted-foreground">
-                  You don't have permission to assign employees
-                </p>
-              )}
             </div>
 
             {/* Start Time */}
@@ -894,53 +973,12 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
 
             {/* Title */}
             <div className="space-y-2">
-              <Label htmlFor="titel">Title *</Label>
+              <Label htmlFor="title">Title *</Label>
               <Input
-                id="titel"
+                id="title"
                 required
-                value={shift.titel}
-                onChange={(e) => handleChange('titel', e.target.value)}
-              />
-            </div>
-
-            {/* Location */}
-            <div className="space-y-2">
-              <Label htmlFor="location">Location *</Label>
-              <Input
-                id="location"
-                required
-                value={shift.location}
-                onChange={(e) => handleChange('location', e.target.value)}
-              />
-            </div>
-
-            {/* City */}
-            <div className="space-y-2">
-              <Label htmlFor="stad">City</Label>
-              <Input
-                id="stad"
-                value={shift.stad}
-                onChange={(e) => handleChange('stad', e.target.value)}
-              />
-            </div>
-
-            {/* Province */}
-            <div className="space-y-2">
-              <Label htmlFor="provincie">Province</Label>
-              <Input
-                id="provincie"
-                value={shift.provincie}
-                onChange={(e) => handleChange('provincie', e.target.value)}
-              />
-            </div>
-
-            {/* Address */}
-            <div className="space-y-2 sm:col-span-2">
-              <Label htmlFor="adres">Address</Label>
-              <Input
-                id="adres"
-                value={shift.adres}
-                onChange={(e) => handleChange('adres', e.target.value)}
+                value={shift.title}
+                onChange={(e) => handleChange('title', e.target.value)}
               />
             </div>
 
@@ -948,29 +986,38 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
             <div className="space-y-2">
               <Label htmlFor="required_profile">Required Profile</Label>
               <Select 
-                onValueChange={(value) => handleChange('required_profile', value)}
-                value={shift.required_profile}
+                value={shift.required_profile || 'none'}
+                onValueChange={(value) => handleChange('required_profile', value === 'none' ? null : value)}
               >
                 <SelectTrigger id="required_profile">
                   <SelectValue placeholder="Select profile" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
                   <SelectItem value="blue pass">Blue Pass</SelectItem>
                   <SelectItem value="green pass">Green Pass</SelectItem>
                 </SelectContent>
               </Select>
             </div>
 
-            {/* Travel Distance */}
+            {/* Status */}
             <div className="space-y-2">
-              <Label htmlFor="reiskilometers">Travel Distance (km)</Label>
-              <Input
-                id="reiskilometers"
-                type="number"
-                min="0"
-                value={shift.reiskilometers}
-                onChange={(e) => handleChange('reiskilometers', Number(e.target.value))}
-              />
+              <Label htmlFor="status">Status</Label>
+              <Select
+                value={shift.status}
+                onValueChange={(value) => handleChange('status', value)}
+              >
+                <SelectTrigger id="status">
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="open">Open</SelectItem>
+                  <SelectItem value="pending">Pending</SelectItem>
+                  <SelectItem value="approved">Approved</SelectItem>
+                  <SelectItem value="rejected">Rejected</SelectItem>
+                  <SelectItem value="cancelled">Cancelled</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
 

@@ -24,6 +24,7 @@ export interface Shift {
   employee_id?: string;
   title: string;
   required_profile?: string;
+  opdrachtgever_id?: number;
   created_at?: string;
   updated_at?: string;
 }
@@ -56,6 +57,33 @@ export interface Employee {
   kilometervergoeding: number;
   max_km: number;
   hourly_allowance: number;
+  naam: string;
+  voornaam: string;
+  tussenvoegsel?: string;
+  achternaam: string;
+  initialen: string;
+  telefoon?: string;
+  adres?: string;
+  huisnummer?: string;
+  huisnummer_toevoeging?: string;
+  postcode?: string;
+  stad?: string;
+  geboortedatum?: string;
+  geboorteplaats?: string;
+  geslacht?: string;
+  burgerlijke_staat?: string;
+  bsn?: string;
+  nationaliteit?: string;
+  in_dienst?: string;
+  uit_dienst?: string;
+  pas_type?: string;
+  pas_nummer?: string;
+  pas_vervaldatum?: string;
+  pas_foto?: string;
+  contract_type?: string;
+  contract_uren?: number;
+  contract_vervaldatum?: string;
+  contract_bestand?: string;
 }
 
 export interface Invoice {
@@ -228,4 +256,13 @@ export interface LocationRateCreate {
   weekend_rate: number;
   holiday_rate: number;
   new_years_eve_rate: number;
+}
+
+export interface Role {
+  id: number;
+  name: string;
+  description: string;
+  permissions: string[];
+  created_at?: string;
+  updated_at?: string;
 }
