@@ -32,10 +32,15 @@ copy_to_remote "shift-service-sync/*" "/opt/shiftmanagement/frontend/"
 # Step 4: Install Docker and Docker Compose if not present
 echo "🐳 Checking Docker installation..."
 execute_remote "if ! command -v docker &> /dev/null; then
-    echo 'Installing Docker...'
-    curl -fsSL https://get.docker.com -o get-docker.sh
-    sh get-docker.sh
-    rm get-docker.sh
+    echo 'Installing Docker for Ubuntu Xenial...'
+    apt-get update
+    apt-get install -y apt-transport-https ca-certificates curl software-properties-common
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
+    add-apt-repository 'deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable'
+    apt-get update
+    apt-get install -y docker-ce docker-ce-cli containerd.io
+    systemctl enable docker
+    systemctl start docker
 fi"
 
 execute_remote "if ! command -v docker-compose &> /dev/null; then
@@ -48,7 +53,7 @@ fi"
 echo "📦 Checking Node.js installation..."
 execute_remote "if ! command -v node &> /dev/null; then
     echo 'Installing Node.js...'
-    curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+    curl -sL https://deb.nodesource.com/setup_12.x | bash -
     apt-get install -y nodejs
 fi"
 
