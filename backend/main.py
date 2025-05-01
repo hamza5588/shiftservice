@@ -23,6 +23,7 @@ from notifications import router as notifications_router
 from database import engine
 from models import Base
 from init_db import init_db
+from config import ALLOWED_ORIGINS, HOST, PORT, RELOAD
 import logging
 
 # Configure logging
@@ -38,12 +39,12 @@ app = FastAPI(
 # Configure CORS - MUST BE BEFORE ANY ROUTES
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080", "http://127.0.0.1:8080", "http://localhost:3000", "http://127.0.0.1:3000"],  # Frontend origins
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods
-    allow_headers=["*"],  # Allow all headers
-    expose_headers=["*"],  # Expose all headers
-    max_age=3600,  # Cache preflight requests for 1 hour
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["*"],
+    max_age=3600,
 )
 
 # Create database tables and initialize admin on startup
@@ -93,4 +94,4 @@ app.include_router(notifications_router)
 # ✅ Start de server correct
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host=HOST, port=PORT, reload=RELOAD)
