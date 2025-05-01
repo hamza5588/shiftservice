@@ -4,7 +4,7 @@ from sqlalchemy.orm import sessionmaker
 import os
 
 # Get database URL from environment variable or use default
-DATABASE_URL = os.getenv("DATABASE_URL", "mysql://planner_user:planner_password@localhost:3306/planner_db")
+DATABASE_URL = os.getenv("DATABASE_URL", "mysql://planner_user:planner_password@db:3306/planner_db")
 
 # Create SQLAlchemy engine
 engine = create_engine(DATABASE_URL)
