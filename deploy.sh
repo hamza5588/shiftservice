@@ -32,20 +32,16 @@ copy_to_remote "shift-service-sync/*" "/opt/shiftmanagement/frontend/"
 # Step 4: Install Docker and Docker Compose if not present
 echo "🐳 Checking Docker installation..."
 execute_remote "if ! command -v docker &> /dev/null; then
-    echo 'Installing Docker for Ubuntu Xenial...'
+    echo 'Installing Docker from Ubuntu repositories...'
     apt-get update
-    apt-get install -y apt-transport-https ca-certificates curl software-properties-common
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
-    add-apt-repository 'deb [arch=amd64] https://download.docker.com/linux/ubuntu xenial stable'
-    apt-get update
-    apt-get install -y docker-ce docker-ce-cli containerd.io
+    apt-get install -y docker.io
     systemctl enable docker
     systemctl start docker
 fi"
 
 execute_remote "if ! command -v docker-compose &> /dev/null; then
     echo 'Installing Docker Compose...'
-    curl -L 'https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-linux-x86_64' -o /usr/local/bin/docker-compose
+    curl -L 'https://github.com/docker/compose/releases/download/v1.29.2/docker-compose-Linux-x86_64' -o /usr/local/bin/docker-compose
     chmod +x /usr/local/bin/docker-compose
 fi"
 
