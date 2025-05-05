@@ -6,3 +6,9 @@
 *.pywz
 backend/__pycache__/init_db.cpython-39.pyc
 backend/__pycache__
+*.pyc
+*.pyo
+*.pyd
+*.pyw
+*.pyz
+*.pywz
