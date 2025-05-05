@@ -297,17 +297,17 @@ export const dashboardApi = {
 
 // API functions for location rates
 export const locationRatesApi = {
-  getAll: () => apiRequest<LocationRate[]>('/api/location-rates/'),
-  getById: (id: number) => apiRequest<LocationRate>(`/api/location-rates/${id}/`),
-  create: (rate: LocationRateCreate) => apiRequest<LocationRate>('/api/location-rates/', {
+  getAll: () => apiRequest<LocationRate[]>('/location-rates/'),
+  getById: (id: number) => apiRequest<LocationRate>(`/location-rates/${id}/`),
+  create: (rate: LocationRateCreate) => apiRequest<LocationRate>('/location-rates/', {
     method: 'POST',
     body: JSON.stringify(rate)
   }),
-  update: (id: number, rate: LocationRateCreate) => apiRequest<LocationRate>(`/api/location-rates/${id}/`, {
+  update: (id: number, rate: LocationRateCreate) => apiRequest<LocationRate>(`/location-rates/${id}/`, {
     method: 'PUT',
     body: JSON.stringify(rate)
   }),
-  delete: (id: number) => apiRequest<void>(`/api/location-rates/${id}/`, {
+  delete: (id: number) => apiRequest<void>(`/location-rates/${id}/`, {
     method: 'DELETE'
   })
 };
