@@ -343,7 +343,7 @@ class ChatMessage(Base):
     id = Column(Integer, primary_key=True, index=True)
     sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    content = Column(String, nullable=False)
+    content = Column(String(1000), nullable=False)  # Specified length of 1000 characters
     timestamp = Column(DateTime, default=datetime.utcnow)
     shift_id = Column(Integer, ForeignKey("shifts.id"), nullable=True)
     read = Column(Boolean, default=False, nullable=False)  # Add read column
