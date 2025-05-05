@@ -4,4 +4,5 @@
 *.pyw
 *.pyz
 *.pywz
-*.pyzw
+backend/__pycache__/init_db.cpython-39.pyc
+backend/__pycache__

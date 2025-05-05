@@ -25,44 +25,49 @@ def init_db():
         with engine.connect() as connection:
             try:
                 # First check if the column exists
-                result = connection.execute("SHOW COLUMNS FROM locations LIKE 'provincie'")
+                result = connection.execute(text("SHOW COLUMNS FROM locations LIKE 'provincie'"))
                 if not result.fetchone():
-                    connection.execute("ALTER TABLE locations ADD COLUMN provincie VARCHAR(100)")
+                    connection.execute(text("ALTER TABLE locations ADD COLUMN provincie VARCHAR(100)"))
                     logger.info("Added provincie column to locations table")
                 else:
                     logger.info("Provincie column already exists in locations table")
             except Exception as e:
                 logger.warning(f"Error checking/adding provincie column: {str(e)}")
-        
+
         # Check if year_client column exists in facturen table
-        result = connection.execute(text("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name='facturen' AND column_name='year_client';
-        """)).fetchone()
-        
-        if not result:
-            logger.info("Adding year_client column to facturen table...")
-            # Add the column if it doesn't exist
-            connection.execute(text("""
-                ALTER TABLE facturen
-                ADD COLUMN year_client VARCHAR(7) NULL;
-            """))
-            
-            # Update existing records
-            connection.execute(text("""
-                UPDATE facturen 
-                SET year_client = SUBSTRING(factuurnummer, 1, 7)
-                WHERE factuurnummer IS NOT NULL;
-            """))
-            
-            # Add index
-            connection.execute(text("""
-                CREATE INDEX ix_facturen_year_client ON facturen (year_client);
-            """))
-            logger.info("Successfully added year_client column and index")
-        else:
-            logger.info("year_client column already exists in facturen table")
+        with engine.connect() as connection:
+            try:
+                result = connection.execute(text("""
+                    SELECT column_name 
+                    FROM information_schema.columns 
+                    WHERE table_name='facturen' AND column_name='year_client';
+                """)).fetchone()
+                
+                if not result:
+                    logger.info("Adding year_client column to facturen table...")
+                    # Add the column if it doesn't exist
+                    connection.execute(text("""
+                        ALTER TABLE facturen
+                        ADD COLUMN year_client VARCHAR(7) NULL;
+                    """))
+                    
+                    # Update existing records
+                    connection.execute(text("""
+                        UPDATE facturen 
+                        SET year_client = SUBSTRING(factuurnummer, 1, 7)
+                        WHERE factuurnummer IS NOT NULL;
+                    """))
+                    
+                    # Add index
+                    connection.execute(text("""
+                        CREATE INDEX ix_facturen_year_client ON facturen (year_client);
+                    """))
+                    logger.info("Successfully added year_client column and index")
+                else:
+                    logger.info("year_client column already exists in facturen table")
+            except Exception as e:
+                logger.error(f"Error adding year_client column: {str(e)}")
+                raise
         
         db = SessionLocal()
         try:
