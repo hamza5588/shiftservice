@@ -24,9 +24,10 @@ export default function RoleManagement() {
   const queryClient = useQueryClient();
 
   // Query for roles
-  const { data: roles, isLoading } = useQuery({
+  const { data: roles = [], isLoading } = useQuery({
     queryKey: ['roles'],
     queryFn: rolesApi.getAll,
+    select: (data) => Array.isArray(data) ? data : [],
   });
 
   // Create role mutation
@@ -208,18 +209,7 @@ export default function RoleManagement() {
               roles?.map((role) => (
                 <TableRow key={role.id}>
                   <TableCell>{role.name}</TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {role.permissions.map((permission) => (
-                        <span
-                          key={permission}
-                          className="px-2 py-1 bg-secondary text-secondary-foreground rounded-md text-sm"
-                        >
-                          {permission}
-                        </span>
-                      ))}
-                    </div>
-                  </TableCell>
+                  <TableCell>{role.permissions?.join(', ') || 'No permissions'}</TableCell>
                   <TableCell>
                     <div className="flex space-x-2">
                       <Button
@@ -233,7 +223,7 @@ export default function RoleManagement() {
                         <Pencil className="h-4 w-4" />
                       </Button>
                       <Button
-                        variant="outline"
+                        variant="destructive"
                         size="sm"
                         onClick={() => handleDeleteRole(role.id)}
                       >
@@ -253,38 +243,36 @@ export default function RoleManagement() {
           <DialogHeader>
             <DialogTitle>Edit Role</DialogTitle>
           </DialogHeader>
-          {selectedRole && (
-            <form onSubmit={handleUpdateRole} className="space-y-4">
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label htmlFor="edit-name" className="text-right">Name</Label>
-                <Input
-                  id="edit-name"
-                  value={selectedRole.name}
-                  onChange={(e) => setSelectedRole({ ...selectedRole, name: e.target.value })}
-                  className="col-span-3"
-                  required
-                />
+          <form onSubmit={handleUpdateRole} className="space-y-4">
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="edit-name" className="text-right">Name</Label>
+              <Input
+                id="edit-name"
+                value={selectedRole?.name || ''}
+                onChange={(e) => setSelectedRole(prev => prev ? { ...prev, name: e.target.value } : null)}
+                className="col-span-3"
+                required
+              />
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label className="text-right">Permissions</Label>
+              <div className="col-span-3 space-y-2">
+                {Object.keys(RolePermissions).map((permission) => (
+                  <div key={permission} className="flex items-center space-x-2">
+                    <Checkbox
+                      id={`edit-${permission}`}
+                      checked={selectedRole?.permissions?.includes(permission)}
+                      onCheckedChange={(checked) => handlePermissionChange(permission, checked as boolean)}
+                    />
+                    <Label htmlFor={`edit-${permission}`}>{permission}</Label>
+                  </div>
+                ))}
               </div>
-              <div className="grid grid-cols-4 items-center gap-4">
-                <Label className="text-right">Permissions</Label>
-                <div className="col-span-3 space-y-2">
-                  {Object.keys(RolePermissions).map((permission) => (
-                    <div key={permission} className="flex items-center space-x-2">
-                      <Checkbox
-                        id={`edit-${permission}`}
-                        checked={selectedRole.permissions.includes(permission)}
-                        onCheckedChange={(checked) => handlePermissionChange(permission, checked as boolean)}
-                      />
-                      <Label htmlFor={`edit-${permission}`}>{permission}</Label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="flex justify-end">
-                <Button type="submit">Update Role</Button>
-              </div>
-            </form>
-          )}
+            </div>
+            <div className="flex justify-end">
+              <Button type="submit">Update Role</Button>
+            </div>
+          </form>
         </DialogContent>
       </Dialog>
     </div>

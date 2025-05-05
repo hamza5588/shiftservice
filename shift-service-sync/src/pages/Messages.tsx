@@ -5,14 +5,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/components/ui/use-toast';
-import { Bell, MessageSquare, Send, User } from 'lucide-react';
+import { Bell, MessageSquare, Send, User as UserIcon } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { employeesApi, shiftsApi, notificationsApi } from '@/lib/api';
 import { usersApi } from '@/lib/users';
 import { format, parseISO, isAfter } from 'date-fns';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import type { User, Employee } from '@/lib/types';
+import type { User as UserType, Employee } from '@/lib/types';
 
 interface ChatMessage {
   id: number;
@@ -64,60 +64,101 @@ const Messages = () => {
 
   // Function to handle new messages
   const handleNewMessage = (message: ChatMessage) => {
+    if (!user?.id) {
+      console.error('No user ID available');
+      return;
+    }
+
+    // Validate message data
+    if (!message || typeof message !== 'object') {
+      console.error('Invalid message format:', message);
+      return;
+    }
+
     // Update chat history if the chat is selected
     queryClient.invalidateQueries({ queryKey: ['chat_history', selectedChat] });
     
     // Update unread count and last message
     setChats(prev => {
-      const chatId = `${message.sender_id}-${message.receiver_id}`;
-      const reverseChatId = `${message.receiver_id}-${message.sender_id}`;
-      
-      // Check if this is a message for the current user
-      const isForCurrentUser = message.receiver_id === parseInt(user?.id || '0');
-      
-      // Don't increment unread count if the chat is currently selected
-      const shouldIncrementUnread = isForCurrentUser && 
-        selectedChat !== chatId && 
-        selectedChat !== reverseChatId;
+      try {
+        // Safely convert IDs to numbers and validate
+        const senderId = typeof message.sender_id === 'number' ? message.sender_id : 0;
+        const receiverId = typeof message.receiver_id === 'number' ? message.receiver_id : 0;
+        const currentUserId = typeof user.id === 'number' ? user.id : 0;
+        
+        // Validate IDs are valid numbers
+        if (isNaN(senderId) || isNaN(receiverId) || isNaN(currentUserId)) {
+          console.error('Invalid ID values:', { senderId, receiverId, currentUserId });
+          return prev;
+        }
+        
+        const chatId = `${senderId}-${receiverId}`;
+        const reverseChatId = `${receiverId}-${senderId}`;
+        
+        // Check if this is a message for the current user
+        const isForCurrentUser = receiverId === currentUserId;
+        
+        // Don't increment unread count if the chat is currently selected
+        const shouldIncrementUnread = isForCurrentUser && 
+          selectedChat !== chatId && 
+          selectedChat !== reverseChatId;
 
-      // If the chat exists, update it
-      const existingChatIndex = prev.findIndex(
-        chat => chat.id === chatId || chat.id === reverseChatId
-      );
+        // If the chat exists, update it
+        const existingChatIndex = prev.findIndex(
+          chat => chat.id === chatId || chat.id === reverseChatId
+        );
 
-      if (existingChatIndex >= 0) {
-        const updatedChats = [...prev];
-        updatedChats[existingChatIndex] = {
-          ...updatedChats[existingChatIndex],
+        if (existingChatIndex >= 0) {
+          const updatedChats = [...prev];
+          updatedChats[existingChatIndex] = {
+            ...updatedChats[existingChatIndex],
+            lastMessage: message,
+            unreadCount: shouldIncrementUnread 
+              ? updatedChats[existingChatIndex].unreadCount + 1 
+              : updatedChats[existingChatIndex].unreadCount
+          };
+          return updatedChats;
+        }
+
+        // If it's a new chat, add it
+        const newChat = {
+          id: chatId,
+          employeeId: String(senderId),
+          employeeName: typeof message.sender_name === 'string' ? message.sender_name : 'Unknown',
           lastMessage: message,
-          unreadCount: shouldIncrementUnread 
-            ? updatedChats[existingChatIndex].unreadCount + 1 
-            : updatedChats[existingChatIndex].unreadCount
+          unreadCount: shouldIncrementUnread ? 1 : 0
         };
-        return updatedChats;
+        return [...prev, newChat];
+      } catch (error) {
+        console.error('Error updating chats:', error);
+        return prev;
       }
-
-      // If it's a new chat, add it
-      const newChat = {
-        id: chatId,
-        employeeId: message.sender_id.toString(),
-        employeeName: message.sender_name,
-        lastMessage: message,
-        unreadCount: shouldIncrementUnread ? 1 : 0
-      };
-      return [...prev, newChat];
-  });
+    });
 
     // Show notification if the message is for the current user and the chat isn't selected
-    if (message.receiver_id === parseInt(user?.id || '0') && 
-        selectedChat !== `${message.sender_id}-${message.receiver_id}` &&
-        selectedChat !== `${message.receiver_id}-${message.sender_id}`) {
-      playNotificationSound();
-      toast({
-        title: `New message from ${message.sender_name}`,
-        description: message.content,
-        duration: 5000,
-      });
+    try {
+      const currentUserId = typeof user.id === 'number' ? user.id : 0;
+      const senderId = typeof message.sender_id === 'number' ? message.sender_id : 0;
+      const receiverId = typeof message.receiver_id === 'number' ? message.receiver_id : 0;
+      
+      // Validate IDs are valid numbers
+      if (isNaN(senderId) || isNaN(receiverId) || isNaN(currentUserId)) {
+        console.error('Invalid ID values:', { senderId, receiverId, currentUserId });
+        return;
+      }
+      
+      if (receiverId === currentUserId && 
+          selectedChat !== `${senderId}-${receiverId}` &&
+          selectedChat !== `${receiverId}-${senderId}`) {
+        playNotificationSound();
+        toast({
+          title: `New message from ${typeof message.sender_name === 'string' ? message.sender_name : 'Unknown'}`,
+          description: typeof message.content === 'string' ? message.content : '',
+          duration: 5000,
+        });
+      }
+    } catch (error) {
+      console.error('Error showing notification:', error);
     }
   };
 
@@ -133,9 +174,10 @@ const Messages = () => {
     queryFn: usersApi.getAll,
   });
 
-  const shouldShowEmployee = (emp: Employee | User) => {
-    const notSelf = emp.username !== user?.username;
-    const isCurrentUserAdminOrPlanner = user?.roles?.includes('admin') || user?.roles?.includes('planner');
+  const shouldShowEmployee = (emp: Employee | UserType) => {
+    if (!user?.username || !emp?.username) return false;
+    const notSelf = emp.username !== user.username;
+    const isCurrentUserAdminOrPlanner = user.roles?.includes('admin') || user.roles?.includes('planner');
     const isTargetAdminOrPlanner = emp.roles?.includes('admin') || emp.roles?.includes('planner');
     
     // If current user is admin/planner, show all users except self
@@ -155,13 +197,13 @@ const Messages = () => {
   // Combine users and employees, removing duplicates by username
   const combinedUsers = [...users];
   employees.forEach(emp => {
-    if (!combinedUsers.some(u => u.username === emp.username)) {
+    if (emp?.username && !combinedUsers.some(u => u?.username === emp.username)) {
       combinedUsers.push(emp);
     }
   });
 
   // Filter employees based on user role
-  const filteredEmployees = combinedUsers.filter(shouldShowEmployee);
+  const filteredEmployees = combinedUsers.filter(emp => emp && shouldShowEmployee(emp));
 
   // Debug logs
   console.log('Current user:', JSON.stringify(user, null, 2));
@@ -173,12 +215,20 @@ const Messages = () => {
   // Fetch shifts for the selected employee
   const { data: shifts = [] } = useQuery({
     queryKey: ['shifts', selectedChat],
-    queryFn: () => shiftsApi.getByEmployee(selectedChat?.split('-')[1] || ''),
+    queryFn: () => {
+      if (!selectedChat) return Promise.resolve([]);
+      const employeeId = selectedChat?.split('-')[1];
+      if (!employeeId) return Promise.resolve([]);
+      return shiftsApi.getAll().then(allShifts => 
+        allShifts.filter(shift => shift.employee_id?.toString() === employeeId)
+      );
+    },
     enabled: !!selectedChat,
   });
 
   // Get the next/current shift for the selected employee
   const currentShift = shifts?.find(shift => {
+    if (!shift?.shift_date) return false;
     const shiftDate = parseISO(shift.shift_date);
     return isAfter(shiftDate, new Date());
   });
@@ -186,7 +236,12 @@ const Messages = () => {
   // Fetch chat history
   const { data: messages = [] } = useQuery({
     queryKey: ['chat_history', selectedChat],
-    queryFn: () => selectedChat ? notificationsApi.getChatHistory(parseInt(selectedChat.split('-')[1])) : [],
+    queryFn: () => {
+      if (!selectedChat) return Promise.resolve([]);
+      const employeeId = selectedChat.split('-')[1];
+      if (!employeeId) return Promise.resolve([]);
+      return notificationsApi.getChatHistory(employeeId);
+    },
     enabled: !!selectedChat,
   });
 
@@ -194,19 +249,23 @@ const Messages = () => {
   const sendMessageMutation = useMutation({
     mutationFn: (content: string) => {
       if (!selectedChat) throw new Error('No chat selected');
+      const receiverId = selectedChat.split('-')[1];
+      if (!receiverId) throw new Error('Invalid receiver ID');
+      const parsedReceiverId = parseInt(receiverId);
+      if (isNaN(parsedReceiverId)) throw new Error('Invalid receiver ID format');
       return notificationsApi.sendChatMessage({
         content,
-        receiver_id: parseInt(selectedChat.split('-')[1]),
+        receiver_id: parsedReceiverId,
         shift_id: currentShift?.id
       });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['chat_history', selectedChat] });
-    setNewMessage('');
-    toast({
-      title: "Success",
-      description: "Message sent successfully",
-    });
+      setNewMessage('');
+      toast({
+        title: "Success",
+        description: "Message sent successfully",
+      });
     },
     onError: (error) => {
       toast({
@@ -219,18 +278,47 @@ const Messages = () => {
 
   // Set up WebSocket connection when user changes
   useEffect(() => {
-    if (user) {
-      const ws = notificationsApi.connectToChat(user.id, handleNewMessage);
-      setWsConnection(ws);
+    if (user?.id) {
+      try {
+        console.log('Setting up WebSocket connection for user:', user);
+        // Ensure we're using the numeric ID from the database
+        const userId = String(user.id);
+        if (!userId || userId === 'undefined') {
+          throw new Error('Invalid user ID');
+        }
+        console.log('User ID for WebSocket:', userId);
+        
+        // Get the token
+        const token = localStorage.getItem('token');
+        if (!token) {
+          throw new Error('No authentication token found');
+        }
+        console.log('Token found:', token ? 'Yes' : 'No');
+        
+        // Connect to WebSocket
+        const ws = notificationsApi.connectToChat(userId, handleNewMessage);
+        setWsConnection(ws);
 
-      return () => {
-        ws.close();
-      };
+        return () => {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            console.log('Closing WebSocket connection');
+            ws.close();
+          }
+        };
+      } catch (error) {
+        console.error('Failed to establish WebSocket connection:', error);
+        toast({
+          title: "Connection Error",
+          description: "Failed to establish chat connection. Please try refreshing the page.",
+          variant: "destructive",
+        });
+      }
     }
   }, [user]);
 
   // Reset unread count when selecting a chat
   const handleSelectChat = (chatId: string) => {
+    if (!chatId) return;
     setSelectedChat(chatId);
     setChats(prev => prev.map(chat => 
       chat.id === chatId ? { ...chat, unreadCount: 0 } : chat
@@ -238,14 +326,15 @@ const Messages = () => {
   };
 
   const handleStartChat = (employeeId: string, employeeName: string) => {
-    const chatId = `${user?.id}-${employeeId}`;
+    if (!user?.id || !employeeId) return;
+    const chatId = `${user.id}-${employeeId}`;
     handleSelectChat(chatId);
     setChats(prev => {
       if (!prev.find(chat => chat.id === chatId)) {
         return [...prev, {
           id: chatId,
           employeeId,
-          employeeName,
+          employeeName: employeeName || 'Unknown',
           unreadCount: 0
         }];
       }
@@ -304,13 +393,13 @@ const Messages = () => {
               </div>
               <div className="space-y-2">
                 {chats.map(chat => (
-              <Button
+                  <Button
                     key={chat.id}
                     variant={selectedChat === chat.id ? 'default' : 'ghost'}
                     className="w-full justify-start"
                     onClick={() => handleSelectChat(chat.id)}
                   >
-                    <User className="h-4 w-4 mr-2" />
+                    <UserIcon className="h-4 w-4 mr-2" />
                     <div className="flex-1 text-left">
                       <div>{chat.employeeName}</div>
                       {chat.lastMessage && (
@@ -324,7 +413,7 @@ const Messages = () => {
                         {chat.unreadCount}
                       </Badge>
                     )}
-              </Button>
+                  </Button>
                 ))}
               </div>
             </div>
@@ -368,23 +457,23 @@ const Messages = () => {
                       </div>
                     )}
                   </div>
-            <form onSubmit={handleSendMessage} className="space-y-2">
-              <Textarea
-                placeholder="Type your message here..."
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                className="min-h-[100px]"
-              />
-              <div className="flex justify-end">
+                  <form onSubmit={handleSendMessage} className="space-y-2">
+                    <Textarea
+                      placeholder="Type your message here..."
+                      value={newMessage}
+                      onChange={(e) => setNewMessage(e.target.value)}
+                      className="min-h-[100px]"
+                    />
+                    <div className="flex justify-end">
                       <Button 
                         type="submit"
                         disabled={sendMessageMutation.isPending}
                       >
-                  <Send className="h-4 w-4 mr-2" />
+                        <Send className="h-4 w-4 mr-2" />
                         {sendMessageMutation.isPending ? "Sending..." : "Send Message"}
-                </Button>
-              </div>
-            </form>
+                      </Button>
+                    </div>
+                  </form>
                 </>
               ) : (
                 <div className="h-full flex items-center justify-center text-muted-foreground">

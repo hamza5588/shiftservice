@@ -3,11 +3,6 @@ import { useAuth } from '@/lib/AuthContext';
 import { locationRatesApi, locationsApi } from '@/lib/api';
 import { Location, LocationRate } from '@/lib/types';
 
-// Debug logging
-console.log('locationRatesApi:', locationRatesApi);
-console.log('typeof locationRatesApi:', typeof locationRatesApi);
-console.log('locationRatesApi.getRates:', locationRatesApi.getRates);
-
 export const LocationRates: React.FC = () => {
   const { user } = useAuth();
   const [locations, setLocations] = useState<Location[]>([]);
@@ -216,9 +211,9 @@ export const LocationRates: React.FC = () => {
               required
             >
               <option value="">Select a pass type</option>
-              <option value="regular">Regular</option>
-              <option value="premium">Premium</option>
-              <option value="vip">VIP</option>
+            
+              <option value="premium">Blue pass</option>
+              <option value="vip">Grey pass</option>
             </select>
           </div>
 

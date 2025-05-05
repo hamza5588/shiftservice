@@ -84,9 +84,9 @@ export default function Employees() {
       (employee.pas_type && employee.pas_type.toLowerCase().includes(searchLower));
   }) || [];
 
-  const handleDeleteEmployee = (id: number) => {
+  const handleDeleteEmployee = (id: string) => {
     if (window.confirm('Are you sure you want to delete this employee?')) {
-      deleteMutation.mutate(id.toString());
+      deleteMutation.mutate(id);
     }
   };
 
@@ -136,9 +136,9 @@ export default function Employees() {
               </CardContent>
             </Card>
           ))
-        ) : filteredEmployees.length > 0 ? (
+        ) : employees && filteredEmployees.length > 0 ? (
           filteredEmployees.map((employee) => (
-            <Card key={employee.id} className="hover:shadow-md transition-shadow">
+            <Card key={employee.employee_id} className="hover:shadow-md transition-shadow">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center justify-between">
                   {employee.naam || `${employee.voornaam} ${employee.achternaam}`}
@@ -165,7 +165,9 @@ export default function Employees() {
                     variant="ghost" 
                     size="sm"
                     onClick={() => {
-                      navigate(`/employees/${employee.id}/view`);
+                      if (employee.employee_id) {
+                        navigate(`/employees/${employee.employee_id}/view`);
+                      }
                     }}
                   >
                     <Eye className="h-4 w-4 mr-1" /> View
@@ -174,9 +176,10 @@ export default function Employees() {
                     variant="ghost" 
                     size="sm"
                     onClick={() => {
-                      console.log('Edit button clicked for employee:', employee);
-                      console.log('Navigating to:', `/employees/${employee.id}/edit`);
-                      navigate(`/employees/${employee.id}/edit`);
+                      if (employee.employee_id) {
+                        console.log('Edit employee:', employee.employee_id);
+                        navigate(`/employees/${employee.employee_id}/edit`);
+                      }
                     }}
                   >
                     <Pencil className="h-4 w-4 mr-1" /> Edit
@@ -184,7 +187,11 @@ export default function Employees() {
                   <Button 
                     variant="ghost" 
                     size="sm"
-                    onClick={() => handleDeleteEmployee(employee.id)}
+                    onClick={() => {
+                      if (employee.employee_id) {
+                        handleDeleteEmployee(employee.employee_id);
+                      }
+                    }}
                   >
                     <Trash2 className="h-4 w-4 mr-1" /> Delete
                   </Button>

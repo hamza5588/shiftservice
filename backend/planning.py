@@ -263,7 +263,7 @@ async def create_shift(shift: ShiftCreate, db: Session = Depends(get_db), curren
         medewerker_id = None
         if shift.employee_id:
             # First get the employee
-            employee = db.query(User).filter(User.id == shift.employee_id).first()
+            employee = db.query(User).filter(User.id == str(int(shift.employee_id) + 1)).first()
             if not employee:
                 raise HTTPException(status_code=404, detail="Employee not found")
             
@@ -273,7 +273,7 @@ async def create_shift(shift: ShiftCreate, db: Session = Depends(get_db), curren
             # Check if this employee has auto-approval for this location
             print(f"Checking auto-approval for employee username {employee.username} at location {location.naam}")
             auto_approval = db.query(AutoApproval).filter(
-                AutoApproval.employee_id == employee.username,
+                AutoApproval.employee_id == employee.username,  # Use username instead of ID
                 AutoApproval.location == location.naam,
                 AutoApproval.auto_approve == True
             ).first()
@@ -505,11 +505,18 @@ async def update_shift(
     if not db_shift:
         raise HTTPException(status_code=404, detail="Shift niet gevonden")
 
+    # Get location details
+    location = db.query(Location).filter(Location.id == shift_update.location_id).first()
+    if not location:
+        raise HTTPException(status_code=404, detail="Location not found")
+
     if shift_update.employee_id:
         # Check if employee exists
-        employee = db.query(User).filter(User.username == shift_update.employee_id).first()
+        employee = db.query(User).filter(User.id == shift_update.employee_id).first()
         if not employee:
             raise HTTPException(status_code=404, detail="Medewerker niet gevonden")
+        # Use the employee's username as the medewerker_id
+        shift_update.employee_id = employee.username
 
     # Format times to HH:MM format
     start_time = ':'.join(shift_update.start_time.split(':')[:2])  # Keep only hours and minutes
@@ -520,6 +527,7 @@ async def update_shift(
     db_shift.start_tijd = start_time
     db_shift.eind_tijd = end_time
     db_shift.location_id = shift_update.location_id
+    db_shift.locatie = location.naam  # Update the location name
     db_shift.status = shift_update.status
     db_shift.medewerker_id = shift_update.employee_id
     db_shift.titel = shift_update.titel
@@ -530,6 +538,17 @@ async def update_shift(
 
     db.commit()
     db.refresh(db_shift)
+    
+    # Get location details for response
+    location_details = None
+    if db_shift.location:
+        location_details = {
+            "id": db_shift.location.id,
+            "naam": db_shift.location.naam,
+            "adres": db_shift.location.adres,
+            "stad": db_shift.location.stad,
+            "provincie": db_shift.location.provincie
+        }
     
     # Convert SQLAlchemy model to Pydantic model for response
     shift = ShiftResponse(
@@ -544,7 +563,9 @@ async def update_shift(
         stad=db_shift.stad,
         provincie=db_shift.provincie,
         adres=db_shift.adres,
-        required_profile=db_shift.required_profile
+        required_profile=db_shift.required_profile,
+        location=db_shift.locatie,
+        location_details=location_details
     )
     
     return shift

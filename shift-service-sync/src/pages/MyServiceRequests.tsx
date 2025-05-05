@@ -40,7 +40,8 @@ export default function MyServiceRequests() {
         console.log('Raw available shifts result:', JSON.stringify(result, null, 2));
         
         if (!Array.isArray(result)) {
-          throw new Error('Invalid response format: expected an array of shifts');
+          console.error('Invalid response format: expected an array of shifts, got:', result);
+          return [];
         }
         
         // Show shifts that are either unassigned or assigned to the current user
@@ -80,14 +81,14 @@ export default function MyServiceRequests() {
     return matchesSearch && matchesStatus;
   }) || [];
 
-  const filteredShifts = availableShifts?.filter(shift => {
+  const filteredShifts = (Array.isArray(availableShifts) ? availableShifts : []).filter(shift => {
     const matchesSearch = searchQuery === '' || 
       (shift.location?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
       (shift.title?.toLowerCase() || '').includes(searchQuery.toLowerCase());
     
     console.log('Shift:', shift.id, 'matchesSearch:', matchesSearch);
     return matchesSearch;
-  }) || [];
+  });
 
   console.log('Final filtered shifts to display:', JSON.stringify(filteredShifts, null, 2));
 

@@ -1,8 +1,9 @@
 import axios from 'axios';
 import { AutoApprovalSetting } from '../types/autoApproval';
 import { authService } from '../lib/auth';
+import { API_BASE_URL } from '../config';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = API_BASE_URL;
 
 // Create axios instance with default config
 const api = axios.create({

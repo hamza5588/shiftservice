@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { toast } from 'sonner';
+import { API_BASE_URL } from '../config';
 
 interface Location {
   id: number;
@@ -70,7 +71,7 @@ export default function Locations() {
 
   const fetchLocations = async () => {
     try {
-      const response = await fetch('http://localhost:8000/locations', {
+      const response = await fetch(`${API_BASE_URL}/locations/`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -91,7 +92,7 @@ export default function Locations() {
 
   const fetchOpdrachtgevers = async () => {
     try {
-      const response = await fetch('http://localhost:8000/opdrachtgevers', {
+      const response = await fetch(`${API_BASE_URL}/opdrachtgevers/`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -114,8 +115,8 @@ export default function Locations() {
     e.preventDefault();
     try {
       const url = selectedLocation
-        ? `http://localhost:8000/locations/${selectedLocation.id}`
-        : 'http://localhost:8000/locations';
+        ? `${API_BASE_URL}/locations/${selectedLocation.id}/`
+        : `${API_BASE_URL}/locations/`;
       const method = selectedLocation ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
@@ -148,7 +149,7 @@ export default function Locations() {
     if (!window.confirm('Are you sure you want to delete this location?')) return;
 
     try {
-      const response = await fetch(`http://localhost:8000/locations/${id}`, {
+      const response = await fetch(`/api/locations/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`

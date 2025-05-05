@@ -1,7 +1,8 @@
 import { Shift, ServiceRequest, Employee, Invoice, PayrollEntry, DashboardStats, CreateInvoicePayload, Location, Opdrachtgever, LocationRate, LocationRateCreate, EmployeeDashboardData, Role, User } from './types';
 import axios from 'axios';
+import { API_BASE_URL } from '../config';
 
-const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const baseURL = API_BASE_URL;
 
 export const api = axios.create({
   baseURL,
@@ -37,108 +38,35 @@ export async function apiRequest<T>(
   endpoint: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = localStorage.getItem('token');
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
-    ...options.headers as Record<string, string>,
-  };
-
-  // Log the headers (excluding the token for security)
-  console.log('Request headers:', {
-    ...headers,
-    Authorization: headers.Authorization ? 'Bearer [REDACTED]' : undefined
-  });
-
-  // Convert any number IDs in the endpoint to strings
-  const processedEndpoint = endpoint.replace(/\/(\d+)\//g, (match, id) => `/${id}/`);
-
-  console.log(`Making API request to: ${baseURL}${processedEndpoint}`, {
-    method: options.method || 'GET',
-    headers: {
-      ...headers,
-      Authorization: headers.Authorization ? 'Bearer [REDACTED]' : undefined
-    },
-    hasBody: !!options.body
-  });
-
   try {
-    const response = await fetch(`${baseURL}${processedEndpoint}`, {
-      ...options,
-      headers,
-      credentials: 'include', // Include credentials for CORS
-      mode: 'cors', // Explicitly set CORS mode
-    });
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
 
-    console.log(`API response status: ${response.status}`, {
-      statusText: response.statusText,
-      headers: Object.fromEntries(response.headers.entries())
+    const response = await fetch(`${baseURL}${endpoint}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+        ...options.headers,
+      },
     });
 
     if (!response.ok) {
-      let errorData;
-      try {
-        errorData = await response.json();
-      } catch (e) {
-        errorData = { detail: response.statusText };
-      }
-      
-      console.error('API error response:', {
+      const errorData = await response.json();
+      console.error('API request failed:', {
+        endpoint,
         status: response.status,
         statusText: response.statusText,
-        errorData
+        data: errorData,
       });
-
-      let errorMessage = '';
-      if (errorData.detail) {
-        if (Array.isArray(errorData.detail)) {
-          // Handle FastAPI validation errors
-          errorMessage = errorData.detail
-            .map((err: any) => {
-              if (err.loc && err.msg) {
-                const field = err.loc[err.loc.length - 1];
-                return `${field}: ${err.msg}`;
-              }
-              return err.msg || err;
-            })
-            .join('\n');
-        } else if (typeof errorData.detail === 'object') {
-          errorMessage = Object.entries(errorData.detail)
-            .map(([key, value]) => `${key}: ${value}`)
-            .join('\n');
-        } else {
-          errorMessage = errorData.detail;
-        }
-      } else if (errorData.message) {
-        errorMessage = errorData.message;
-      } else if (typeof errorData === 'string') {
-        errorMessage = errorData;
-      } else if (typeof errorData === 'object') {
-        errorMessage = Object.entries(errorData)
-          .map(([key, value]) => `${key}: ${value}`)
-          .join('\n');
-      } else {
-        errorMessage = `API request failed with status ${response.status}: ${response.statusText}`;
-      }
-      
-      const error = new Error(errorMessage);
-      (error as any).status = response.status;
-      (error as any).data = errorData;
-      throw error;
+      throw new Error(errorData.detail || `API request failed: ${response.status} ${response.statusText}`);
     }
 
-    const data = await response.json();
-    console.log(`API response data for ${processedEndpoint}:`, data);
-    return data;
+    return response.json();
   } catch (error) {
-    console.error('API request failed:', {
-      endpoint: processedEndpoint,
-      error: error instanceof Error ? {
-        message: error.message,
-        status: (error as any).status,
-        data: (error as any).data
-      } : error
-    });
+    console.error('API request error:', error);
     throw error;
   }
 }
@@ -147,13 +75,13 @@ export async function apiRequest<T>(
 export const shiftsApi = {
   getAll: () => apiRequest<Shift[]>('/planning/'),
   getById: (id: number) => apiRequest<Shift>(`/planning/${id}`),
-  create: (data: Omit<Shift, 'id'>) => apiRequest<Shift>('/planning/', {
+  create: (shift: Omit<Shift, 'id'>) => apiRequest<Shift>('/planning/', {
     method: 'POST',
-    body: JSON.stringify(data)
+    body: JSON.stringify(shift)
   }),
-  update: (id: number, data: Partial<Shift>) => apiRequest<Shift>(`/planning/${id}/`, {
+  update: (id: number, shift: Partial<Shift>) => apiRequest<Shift>(`/planning/${id}/`, {
     method: 'PUT',
-    body: JSON.stringify(data)
+    body: JSON.stringify(shift)
   }),
   delete: (id: number) => apiRequest<void>(`/planning/${id}/`, {
     method: 'DELETE'
@@ -192,19 +120,34 @@ export const serviceRequestsApi = {
 
 // API functions for employees
 export const employeesApi = {
-  getAll: () => apiRequest<Employee[]>('/medewerkers/'),
-  getById: (id: string) => apiRequest<Employee>(`/medewerkers/${id}`),
-  create: (employee: Omit<Employee, 'id'>) => apiRequest<Employee>('/medewerkers/', {
+  getAll: () => apiRequest<Employee[]>('/employee_profiles/'),
+  getById: (id: string) => {
+    if (!id || id === 'undefined') {
+      throw new Error('Employee ID is required');
+    }
+    return apiRequest<Employee>(`/employee_profiles/${id}`);
+  },
+  create: (employee: Omit<Employee, 'id'>) => apiRequest<Employee>('/employee_profiles/', {
       method: 'POST',
       body: JSON.stringify(employee)
     }),
-  update: (id: string, employee: Partial<Employee>) => apiRequest<Employee>(`/medewerkers/${id}`, {
+  update: (id: string, employee: Partial<Employee>) => {
+    if (!id || id === 'undefined') {
+      throw new Error('Employee ID is required');
+    }
+    return apiRequest<Employee>(`/employee_profiles/${id}`, {
       method: 'PUT',
       body: JSON.stringify(employee)
-    }),
-  delete: (id: string) => apiRequest<void>(`/medewerkers/${id}`, {
-    method: 'DELETE'
-  }),
+    });
+  },
+  delete: (id: string) => {
+    if (!id || id === 'undefined') {
+      throw new Error('Employee ID is required');
+    }
+    return apiRequest<void>(`/employee_profiles/${id}`, {
+      method: 'DELETE'
+    });
+  },
   getMyProfile: () => apiRequest<Employee>('/employee_profiles/my-profile'),
 };
 
@@ -354,17 +297,17 @@ export const dashboardApi = {
 
 // API functions for location rates
 export const locationRatesApi = {
-  getAll: () => apiRequest<LocationRate[]>('/facturen/location-rates/'),
-  getById: (id: number) => apiRequest<LocationRate>(`/facturen/location-rates/${id}`),
-  create: (data: LocationRateCreate) => apiRequest<LocationRate>('/facturen/location-rates/', {
+  getAll: () => apiRequest<LocationRate[]>('/api/location-rates/'),
+  getById: (id: number) => apiRequest<LocationRate>(`/api/location-rates/${id}/`),
+  create: (rate: LocationRateCreate) => apiRequest<LocationRate>('/api/location-rates/', {
     method: 'POST',
-    body: JSON.stringify(data)
+    body: JSON.stringify(rate)
   }),
-  update: (id: number, data: Partial<LocationRate>) => apiRequest<LocationRate>(`/facturen/location-rates/${id}`, {
+  update: (id: number, rate: LocationRateCreate) => apiRequest<LocationRate>(`/api/location-rates/${id}/`, {
     method: 'PUT',
-    body: JSON.stringify(data)
+    body: JSON.stringify(rate)
   }),
-  delete: (id: number) => apiRequest<void>(`/facturen/location-rates/${id}`, {
+  delete: (id: number) => apiRequest<void>(`/api/location-rates/${id}/`, {
     method: 'DELETE'
   })
 };
@@ -388,7 +331,10 @@ export const opdrachtgeversApi = {
 
 // API functions for roles
 export const rolesApi = {
-  getAll: () => apiRequest<Role[]>('/roles/'),
+  getAll: async () => {
+    const response = await apiRequest<Role[]>('/roles/');
+    return Array.isArray(response) ? response : [];
+  },
   create: (data: Partial<Role>) => apiRequest<Role>('/roles/', {
     method: 'POST',
     body: JSON.stringify(data)
@@ -421,7 +367,7 @@ export interface ChatMessageResponse {
 
 // API functions for notifications and chat
 export const notificationsApi = {
-  getUnreadCount: () => apiRequest<number>('/notifications/unread-count/'),
+  getUnreadCount: () => apiRequest<number>('/notifications/unread-count'),
   getChatHistory: (userId: string) => apiRequest<ChatMessageResponse[]>(`/notifications/chat/history/${userId}/`),
   sendChatMessage: (data: ChatMessageCreate) => apiRequest<ChatMessageResponse>('/notifications/chat/send/', {
     method: 'POST',
@@ -431,33 +377,87 @@ export const notificationsApi = {
     method: 'POST'
   }),
   connectToChat: (userId: string, onMessage: (message: ChatMessageResponse) => void) => {
-    const ws = new WebSocket(`${baseURL.replace('http', 'ws')}/notifications/ws/chat/${userId}/`);
+    const token = localStorage.getItem('token');
+    if (!token) {
+      throw new Error('No authentication token found');
+    }
+
+    // Encode the token to handle special characters
+    const encodedToken = encodeURIComponent(token);
+    const wsUrl = `${baseURL.replace('http', 'ws')}/notifications/ws/chat/${userId}?token=${encodedToken}`;
+    console.log('Connecting to WebSocket:', wsUrl);
+
+    const ws = new WebSocket(wsUrl);
+    
+    ws.onopen = () => {
+      console.log('WebSocket connection established successfully');
+    };
     
     ws.onmessage = (event) => {
-      const data = JSON.parse(event.data);
-      if (data.type === 'chat_message') {
-        onMessage(data.message);
+      try {
+        const data = JSON.parse(event.data);
+        console.log('Received WebSocket message:', data);
+        
+        // Validate the message data structure
+        if (!data || typeof data !== 'object') {
+          console.error('Invalid message format:', data);
+          return;
+        }
+
+        if (data.type === 'message') {
+          // Ensure all required fields exist and have valid types
+          const message: ChatMessageResponse = {
+            id: typeof data.id === 'number' ? data.id : 0,
+            sender_id: typeof data.sender_id === 'number' ? data.sender_id : 0,
+            receiver_id: typeof data.receiver_id === 'number' ? data.receiver_id : 0,
+            content: typeof data.content === 'string' ? data.content : '',
+            timestamp: typeof data.timestamp === 'string' ? data.timestamp : new Date().toISOString(),
+            shift_id: typeof data.shift_id === 'number' ? data.shift_id : undefined,
+            sender_name: typeof data.sender_name === 'string' ? data.sender_name : 'Unknown'
+          };
+
+          // Log the processed message for debugging
+          console.log('Processed message:', message);
+          
+          onMessage(message);
+        }
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
+        console.error('Raw message data:', event.data);
       }
     };
 
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
+      // Log additional connection details
+      console.log('WebSocket state:', ws.readyState);
+      console.log('WebSocket URL:', ws.url);
+      console.log('User ID:', userId);
+      console.log('Token present:', !!token);
     };
 
-    ws.onclose = () => {
-      console.log('WebSocket connection closed');
-      // Attempt to reconnect after 5 seconds
-      setTimeout(() => {
-        notificationsApi.connectToChat(userId, onMessage);
-      }, 5000);
+    ws.onclose = (event) => {
+      console.log('WebSocket connection closed:', {
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean,
+        userId: userId
+      });
+      // Only attempt to reconnect if the connection was closed unexpectedly
+      if (event.code !== 1000) {
+        console.log('Attempting to reconnect in 5 seconds...');
+        setTimeout(() => {
+          notificationsApi.connectToChat(userId, onMessage);
+        }, 5000);
+      }
     };
 
     return ws;
   }
 };
 
-export const usersApi = {
-  getAll: () => apiRequest<User[]>('/users/'),
-  getById: (id: string) => apiRequest<User>(`/users/${id}`),
-  getCurrentUser: () => apiRequest<User>('/users/me')
+// Notifications service
+export const notificationsService = {
+  getUnreadCount: () => apiRequest<number>('/notifications/unread-count'),
+  // ... rest of the notifications service
 };

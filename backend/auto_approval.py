@@ -268,9 +268,19 @@ def check_auto_approval_eligibility(
         db.commit()
         db.refresh(location_config)
 
+    # Get the employee to ensure we have their username
+    employee = db.query(User).filter(
+        (User.id == employee_id) | (User.username == employee_id)
+    ).first()
+    if not employee:
+        return False
+
+    # Use the employee's username for consistency
+    employee_username = employee.username
+
     # Check per-employee, per-location auto-approval setting
     auto_approval = db.query(AutoApproval).filter(
-        AutoApproval.employee_id == employee_id,
+        AutoApproval.employee_id == employee_username,  # Use username
         AutoApproval.location == location,
         AutoApproval.auto_approve == True
     ).first()
@@ -283,7 +293,7 @@ def check_auto_approval_eligibility(
         location_config.enable_experience_based_approval):
         # Check if employee has worked at this location before
         previous_shifts = db.query(Shift).filter(
-            Shift.medewerker_id == employee_id,
+            Shift.medewerker_id == employee_username,  # Use username
             Shift.locatie == location,
             Shift.status == "completed"
         ).count()
@@ -297,7 +307,7 @@ def check_auto_approval_eligibility(
         return False
         
     recent_shifts = db.query(Shift).filter(
-        Shift.medewerker_id == employee_id,
+        Shift.medewerker_id == employee_username,  # Use username
         Shift.locatie == location,
         Shift.status == "completed",
         Shift.datum >= datetime.now().date() - timedelta(days=30)  # Last 30 days

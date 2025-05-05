@@ -766,8 +766,8 @@ export default function Invoicing() {
                       <SelectValue placeholder="Select pass type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="standard">Standard</SelectItem>
-                      <SelectItem value="premium">Premium</SelectItem>
+                      <SelectItem value="standard">Blue pass</SelectItem>
+                      <SelectItem value="premium">Grey pass</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>

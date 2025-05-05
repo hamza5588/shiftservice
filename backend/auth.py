@@ -8,19 +8,15 @@ from passlib.context import CryptContext
 from sqlalchemy.orm import Session
 from database import get_db
 from models import User, Role, Medewerker
+from config import SECRET_KEY, ALGORITHM, ACCESS_TOKEN_EXPIRE_MINUTES
 import logging
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-# JWT Configuration
-SECRET_KEY = "mijnzeergeheime_sleutel"  # Use environment variable in production
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
 router = APIRouter(tags=["auth"])
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 # Password hashing configuration
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -91,7 +87,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     if expires_delta:
         expire = datetime.utcnow() + expires_delta
     else:
-        expire = datetime.utcnow() + timedelta(minutes=15)
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
@@ -130,7 +126,7 @@ def require_roles(required_roles: List[str]):
         return current_user
     return role_checker
 
-@router.post("/token", response_model=Token)
+@router.post("/auth/token", response_model=Token)
 async def login_for_access_token(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
@@ -219,19 +215,39 @@ async def create_user(
             logger.info("Role is employee, creating employee profile...")
             try:
                 current_date = datetime.utcnow()
+                # Split full name into first and last name
+                name_parts = user.full_name.split()
+                voornaam = name_parts[0] if name_parts else ""
+                achternaam = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+                initialen = "".join([part[0] for part in name_parts if part]) if name_parts else ""
+                
                 employee = Medewerker(
-                    user_id=db_user.username,  # Link to user account
+                    user_id=db_user.id,  # Use the user's ID instead of username
                     naam=user.full_name,
+                    voornaam=voornaam,
+                    achternaam=achternaam,
+                    initialen=initialen,
                     email=user.email,
                     telefoon="",  # Default empty
                     adres="",  # Default empty
+                    huisnummer="0",  # Default value
+                    huisnummer_toevoeging=None,  # Optional
+                    postcode="0000AA",  # Default value
+                    stad="",  # Default empty
                     geboortedatum=current_date,  # Default to current date
+                    geboorteplaats=None,  # Optional
+                    geslacht=None,  # Optional
+                    burgerlijke_staat=None,  # Optional
+                    bsn=None,  # Optional
+                    nationaliteit=None,  # Optional
                     in_dienst=current_date,
                     uit_dienst=None,  # Not set for new employees
                     pas_type="Standard",
                     pas_nummer="",
                     pas_vervaldatum=current_date,
                     pas_foto=None,
+                    pas_foto_voorzijde=None,  # Optional
+                    pas_foto_achterzijde=None,  # Optional
                     contract_type="Uurloner",
                     contract_uren=0,
                     contract_vervaldatum=None,

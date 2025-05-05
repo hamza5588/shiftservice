@@ -4,24 +4,85 @@ import { useQuery } from '@tanstack/react-query';
 import { employeesApi } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useToast } from "@/components/ui/use-toast";
 
 export default function ViewEmployee() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { toast } = useToast();
 
   // Query for employee details
-  const { data: employee, isLoading } = useQuery({
+  const { data: employee, isLoading, error } = useQuery({
     queryKey: ['employee', id],
-    queryFn: () => employeesApi.getById(id!),
-    enabled: !!id,
+    queryFn: () => {
+      if (!id || id === 'undefined') {
+        throw new Error('Employee ID is required');
+      }
+      return employeesApi.getById(id);
+    },
+    enabled: !!id && id !== 'undefined',
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to fetch employee details",
+        variant: "destructive",
+      });
+    }
   });
 
+  if (!id || id === 'undefined') {
+    return (
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="page-title m-0">Error</h1>
+          <Button variant="outline" onClick={() => navigate('/employees')}>
+            Back to Employees
+          </Button>
+        </div>
+        <div className="text-red-500">Employee ID is required</div>
+      </div>
+    );
+  }
+
   if (isLoading) {
-    return <div>Loading...</div>;
+    return (
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="page-title m-0">Loading...</h1>
+          <Button variant="outline" onClick={() => navigate('/employees')}>
+            Back to Employees
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="page-title m-0">Error</h1>
+          <Button variant="outline" onClick={() => navigate('/employees')}>
+            Back to Employees
+          </Button>
+        </div>
+        <div className="text-red-500">Failed to load employee details. Please try again later.</div>
+      </div>
+    );
   }
 
   if (!employee) {
-    return <div>Employee not found</div>;
+    return (
+      <div className="max-w-4xl mx-auto p-6">
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="page-title m-0">Error</h1>
+          <Button variant="outline" onClick={() => navigate('/employees')}>
+            Back to Employees
+          </Button>
+        </div>
+        <div className="text-red-500">Employee not found</div>
+      </div>
+    );
   }
 
   return (

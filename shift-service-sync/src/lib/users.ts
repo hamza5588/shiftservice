@@ -1,7 +1,8 @@
 import { User } from './types';
 import { apiRequest } from './api';
+import { API_BASE_URL } from '../config';
 
-const API_URL = 'http://localhost:8000';
+const API_URL = API_BASE_URL;
 
 export interface User {
   id: number;
@@ -26,7 +27,10 @@ export interface UpdateUserData {
 }
 
 export const usersApi = {
-  getAll: () => apiRequest<User[]>('/users/'),
+  getAll: async () => {
+    const response = await apiRequest<User[]>('/users/');
+    return Array.isArray(response) ? response : [];
+  },
   getById: (id: string) => apiRequest<User>(`/users/${id}`),
   create: (user: CreateUserData) => apiRequest<User>('/users/', {
     method: 'POST',

@@ -11,6 +11,11 @@ ENVIRONMENT = os.getenv('ENVIRONMENT', 'local')  # Default to local if not set
 DATABASE_URL = os.getenv('PROD_DB_URL') if ENVIRONMENT == 'production' else os.getenv('LOCAL_DB_URL')
 API_URL = os.getenv('PROD_API_URL') if ENVIRONMENT == 'production' else os.getenv('LOCAL_API_URL')
 
+# JWT Configuration
+SECRET_KEY = os.getenv('SECRET_KEY', 'mijnzeergeheime_sleutel')  # Use environment variable in production
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30
+
 # CORS configuration
 if ENVIRONMENT == 'production':
     ALLOWED_ORIGINS = os.getenv('PROD_FRONTEND_URLS', '').split(',')

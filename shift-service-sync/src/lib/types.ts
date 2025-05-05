@@ -44,6 +44,7 @@ export interface ServiceRequest {
 
 export interface Employee {
   id: number;
+  employee_id: string;
   username: string;
   email: string;
   full_name: string;

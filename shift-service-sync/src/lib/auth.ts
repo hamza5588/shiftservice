@@ -1,7 +1,13 @@
 import axios from 'axios';
-import { User } from './api';
+import { API_BASE_URL } from '../config';
 
-const API_URL = '/api'; // Using the proxy
+export interface User {
+  id: number;
+  username: string;
+  email: string;
+  full_name: string;
+  roles: string[];
+}
 
 export interface LoginCredentials {
   username: string;
@@ -21,11 +27,10 @@ export const authService = {
       formData.append('username', credentials.username);
       formData.append('password', credentials.password);
       
-      const response = await axios.post(`${API_URL}/token`, formData, {
+      const response = await axios.post(`${API_BASE_URL}/auth/token`, formData, {
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
-        withCredentials: true,  // Include credentials for CORS
       });
       
       console.log('Login response received:', {
@@ -62,7 +67,7 @@ export const authService = {
       const token = localStorage.getItem('token');
       if (!token) throw new Error('No token found');
       
-      const response = await axios.get(`${API_URL}/users/me`, {
+      const response = await axios.get(`${API_BASE_URL}/users/me`, {
         headers: { 
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'

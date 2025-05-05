@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from users import router as users_router
 from planning import router as planning_router
 from facturatie import router as facturatie_router
+from location_rates import router as location_rates_router
 from opdrachtgevers import router as opdrachtgevers_router
 from export import router as export_router
 from tijdlijn import router as tijdlijn_router
@@ -23,7 +24,6 @@ from notifications import router as notifications_router
 from database import engine
 from models import Base
 from init_db import init_db
-from config import ALLOWED_ORIGINS, HOST, PORT, RELOAD
 import logging
 
 # Configure logging
@@ -39,20 +39,24 @@ app = FastAPI(
 # Configure CORS - MUST BE BEFORE ANY ROUTES
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=["*"],  # Allow all origins since we're using Nginx as a proxy
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"],
-    max_age=3600,
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+    expose_headers=["*"],  # Expose all headers
+    max_age=3600,  # Cache preflight requests for 1 hour
 )
 
 # Create database tables and initialize admin on startup
 @app.on_event("startup")
 async def startup_event():
     logger.info("Running database initialization...")
-    init_db()
-    logger.info("Database initialization completed!")
+    try:
+        init_db()
+        logger.info("Database initialization completed!")
+    except Exception as e:
+        logger.error(f"Database initialization failed: {str(e)}")
+        raise e
 
 # Remove the middleware that's causing conflicts
 # @app.middleware("http")
@@ -72,6 +76,7 @@ async def root():
 app.include_router(users_router)
 app.include_router(planning_router)
 app.include_router(facturatie_router)
+app.include_router(location_rates_router)
 app.include_router(verloning_router)
 app.include_router(auth_router)
 app.include_router(opdrachtgevers_router)
@@ -94,4 +99,4 @@ app.include_router(notifications_router)
 # ✅ Start de server correct
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host=HOST, port=PORT, reload=RELOAD)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

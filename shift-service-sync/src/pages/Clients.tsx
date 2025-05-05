@@ -61,7 +61,7 @@ export default function Clients() {
 
   const fetchClients = async () => {
     try {
-      const response = await fetch('http://localhost:8000/opdrachtgevers/', {
+      const response = await fetch('/api/opdrachtgevers/', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -81,8 +81,8 @@ export default function Clients() {
     e.preventDefault();
     try {
       const url = selectedClient
-        ? `http://localhost:8000/opdrachtgevers/${selectedClient.id}`
-        : 'http://localhost:8000/opdrachtgevers/';
+        ? `/api/opdrachtgevers/${selectedClient.id}`
+        : '/api/opdrachtgevers/';
       const method = selectedClient ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
@@ -112,7 +112,7 @@ export default function Clients() {
     if (!window.confirm('Are you sure you want to delete this client?')) return;
 
     try {
-      const response = await fetch(`http://localhost:8000/opdrachtgevers/${id}`, {
+      const response = await fetch(`/api/opdrachtgevers/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`

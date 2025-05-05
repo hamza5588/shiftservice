@@ -8,11 +8,23 @@ import { useToast } from "@/components/ui/use-toast";
 import { Employee } from '@/lib/types';
 
 export default function EditEmployee() {
-  const { id } = useParams();
+  const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [formData, setFormData] = useState<Partial<Employee>>({});
+
+  // Add validation for ID
+  useEffect(() => {
+    if (!id) {
+      toast({
+        title: "Error",
+        description: "Employee ID is required",
+        variant: "destructive",
+      });
+      navigate('/employees');
+    }
+  }, [id, navigate, toast]);
 
   // Add debug logs
   React.useEffect(() => {
@@ -21,13 +33,21 @@ export default function EditEmployee() {
   }, [id]);
 
   // Query for employee details
-  const { data: employee, isLoading } = useQuery({
+  const { data: employee, isLoading, error } = useQuery({
     queryKey: ['employee', id],
     queryFn: async () => {
-      console.log('Fetching employee with ID:', id);
-      const data = await employeesApi.getById(id!);
-      console.log('Raw API Response:', data);
-      return data;
+      if (!id) {
+        throw new Error('Employee ID is required');
+      }
+      try {
+        console.log('Fetching employee with ID:', id);
+        const data = await employeesApi.getById(id);
+        console.log('Raw API Response:', data);
+        return data;
+      } catch (error) {
+        console.error('Error fetching employee:', error);
+        throw error;
+      }
     },
     enabled: !!id,
   });
@@ -39,7 +59,8 @@ export default function EditEmployee() {
       
       // Initialize form data with proper fallbacks
       setFormData({
-        id: employee.id,
+        employee_id: employee.employee_id,
+        personeelsnummer: employee.personeelsnummer || 0,
         naam: employee.naam || '',
         voornaam: employee.voornaam || '',
         tussenvoegsel: employee.tussenvoegsel || '',
@@ -66,7 +87,6 @@ export default function EditEmployee() {
         contract_type: employee.contract_type || '',
         contract_uren: employee.contract_uren || 0,
         contract_vervaldatum: employee.contract_vervaldatum || '',
-        personeelsnummer: employee.personeelsnummer || 0,
         uurloner: employee.uurloner || false,
         telefoonvergoeding_per_uur: employee.telefoonvergoeding_per_uur || 0,
         maaltijdvergoeding_per_uur: employee.maaltijdvergoeding_per_uur || 0,
@@ -115,8 +135,16 @@ export default function EditEmployee() {
   // Mutation for updating employee
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: string, data: Partial<Employee> }) => {
-      console.log('Sending update request with data:', JSON.stringify(data, null, 2));
-      return employeesApi.update(id, data);
+      if (!id) {
+        throw new Error('Employee ID is required');
+      }
+      try {
+        console.log('Sending update request with data:', JSON.stringify(data, null, 2));
+        return employeesApi.update(id, data);
+      } catch (error) {
+        console.error('Error updating employee:', error);
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['employees'] });
@@ -143,36 +171,28 @@ export default function EditEmployee() {
 
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!id) return;
+    if (!id) {
+      toast({
+        title: "Error",
+        description: "Employee ID is required",
+        variant: "destructive",
+      });
+      return;
+    }
 
     const formData = new FormData(e.currentTarget);
     console.log('Form data:', Object.fromEntries(formData.entries()));
-
-    // Validate required fields
-    const requiredFields = ['naam', 'voornaam', 'achternaam', 'initialen', 'email'];
-    for (const field of requiredFields) {
-      if (!formData.get(field)) {
-        toast({
-          title: "Error",
-          description: `Please fill in the required field: ${field}`,
-          variant: "destructive",
-        });
-        return;
-      }
-    }
 
     // Helper function to format dates for backend
     const formatDateForBackend = (dateStr: string | null) => {
       if (!dateStr) return null;
       try {
-        // Parse the date string
+        // Parse the date string and format as YYYY-MM-DD
         const date = new Date(dateStr);
-        // Check if the date is valid
         if (isNaN(date.getTime())) {
           throw new Error('Invalid date');
         }
-        // Format as ISO string with timezone
-        return date.toISOString();
+        return date.toISOString().split('T')[0];
       } catch (error) {
         console.error('Error formatting date:', error);
         return null;
@@ -180,12 +200,14 @@ export default function EditEmployee() {
     };
 
     const updatedEmployee = {
-      naam: formData.get('naam') as string,
-      voornaam: formData.get('voornaam') as string,
+      employee_id: id, // Use the ID from the URL params
+      personeelsnummer: parseInt(id), // Use the ID as personeelsnummer
+      naam: formData.get('naam') as string || null,
+      voornaam: formData.get('voornaam') as string || null,
       tussenvoegsel: formData.get('tussenvoegsel') as string || null,
-      achternaam: formData.get('achternaam') as string,
-      initialen: formData.get('initialen') as string,
-      email: formData.get('email') as string,
+      achternaam: formData.get('achternaam') as string || null,
+      initialen: formData.get('initialen') as string || null,
+      email: formData.get('email') as string || null,
       telefoon: formData.get('telefoon') as string || null,
       adres: formData.get('adres') as string || null,
       huisnummer: formData.get('huisnummer') as string || null,
@@ -219,8 +241,28 @@ export default function EditEmployee() {
     return <div>Loading...</div>;
   }
 
+  if (error) {
+    return (
+      <div className="p-4">
+        <h1 className="text-2xl font-bold mb-4">Error</h1>
+        <p className="text-red-500">{error.message}</p>
+        <Button onClick={() => navigate('/employees')} className="mt-4">
+          Back to Employees
+        </Button>
+      </div>
+    );
+  }
+
   if (!employee) {
-    return <div>Employee not found</div>;
+    return (
+      <div className="p-4">
+        <h1 className="text-2xl font-bold mb-4">Employee Not Found</h1>
+        <p>The requested employee could not be found.</p>
+        <Button onClick={() => navigate('/employees')} className="mt-4">
+          Back to Employees
+        </Button>
+      </div>
+    );
   }
 
   return (

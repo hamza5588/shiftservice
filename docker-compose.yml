@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   mysql:
     image: mysql:8.0
@@ -29,12 +31,33 @@ services:
       mysql:
         condition: service_healthy
     environment:
-      DATABASE_URL: mysql://planner_user:planner_password@mysql:3306/planner_db
+      DATABASE_URL: mysql://planner_user:planner_password@planner_mysql:3306/planner_db
+      SECRET_KEY: your-secret-key-here
+      ALGORITHM: HS256
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
+      - ./backend/uploads:/app/uploads
+      - ./backend/uploaded_facturen:/app/uploaded_facturen
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - planner_network
+
+  frontend:
+    build:
+      context: ./shift-service-sync
+      dockerfile: Dockerfile
+    container_name: planner_frontend
+    ports:
+      - "80:80"
+    volumes:
+      - ./shift-service-sync:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=http://localhost:8000
+    depends_on:
+      - backend
     networks:
       - planner_network
 

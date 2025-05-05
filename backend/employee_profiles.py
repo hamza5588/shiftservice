@@ -29,19 +29,19 @@ BASE_WAGE = 20.0  # fallback als geen hourly_allowance is ingesteld
 # Employee Profile model
 class EmployeeProfile(BaseModel):
     employee_id: str
-    personeelsnummer: int
-    naam: str
-    voornaam: str
+    personeelsnummer: Optional[int] = None
+    naam: Optional[str] = None
+    voornaam: Optional[str] = None
     tussenvoegsel: Optional[str] = None
-    achternaam: str
-    initialen: str
-    email: str
+    achternaam: Optional[str] = None
+    initialen: Optional[str] = None
+    email: Optional[str] = None
     telefoon: Optional[str] = None
-    adres: str
-    huisnummer: str
+    adres: Optional[str] = None
+    huisnummer: Optional[str] = None
     huisnummer_toevoeging: Optional[str] = None
-    postcode: str
-    stad: str
+    postcode: Optional[str] = None
+    stad: Optional[str] = None
     geboortedatum: Optional[date] = None
     geboorteplaats: Optional[str] = None
     geslacht: Optional[str] = None
@@ -59,14 +59,14 @@ class EmployeeProfile(BaseModel):
     contract_type: Optional[str] = None
     contract_uren: Optional[int] = None
     contract_vervaldatum: Optional[date] = None
-    uurloner: bool
-    telefoonvergoeding_per_uur: float
-    maaltijdvergoeding_per_uur: float
-    de_minimis_bonus_per_uur: float
-    wkr_toeslag_per_uur: float
-    kilometervergoeding: float
-    max_km: int
-    hourly_allowance: float
+    uurloner: Optional[bool] = True
+    telefoonvergoeding_per_uur: Optional[float] = 2.0
+    maaltijdvergoeding_per_uur: Optional[float] = 1.5
+    de_minimis_bonus_per_uur: Optional[float] = 0.5
+    wkr_toeslag_per_uur: Optional[float] = 1.0
+    kilometervergoeding: Optional[float] = 0.23
+    max_km: Optional[int] = 60
+    hourly_allowance: Optional[float] = BASE_WAGE
 
     class Config:
         from_attributes = True
@@ -163,7 +163,15 @@ async def get_employee_profile(
 ):
     """Get a specific employee profile by ID."""
     try:
-        employee = db.query(Medewerker).filter(Medewerker.id == int(employee_id)).first()
+        if not employee_id or employee_id == "undefined":
+            raise HTTPException(status_code=400, detail="Employee ID is required")
+            
+        try:
+            employee_id_int = int(employee_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid employee ID format")
+            
+        employee = db.query(Medewerker).filter(Medewerker.id == employee_id_int).first()
         if not employee:
             raise HTTPException(status_code=404, detail="Employee profile not found")
         
@@ -221,7 +229,7 @@ async def get_my_profile(
         raise HTTPException(status_code=403, detail="Only employees can view their own profile")
     
     try:
-        employee = db.query(Medewerker).filter(Medewerker.id == int(current_user["username"])).first()
+        employee = db.query(Medewerker).filter(Medewerker.user_id == current_user["id"]).first()
         if not employee:
             raise HTTPException(status_code=404, detail="Employee profile not found")
         
@@ -267,6 +275,103 @@ async def get_my_profile(
             hourly_allowance=BASE_WAGE
         )
     except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@employee_profiles_router.put("/{employee_id}", response_model=EmployeeProfile)
+async def update_employee_profile(
+    employee_id: str,
+    employee_data: EmployeeProfile,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Update a specific employee profile by ID."""
+    try:
+        if not employee_id or employee_id == "undefined":
+            raise HTTPException(status_code=400, detail="Employee ID is required")
+            
+        try:
+            employee_id_int = int(employee_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid employee ID format")
+            
+        employee = db.query(Medewerker).filter(Medewerker.id == employee_id_int).first()
+        if not employee:
+            raise HTTPException(status_code=404, detail="Employee profile not found")
+        
+        # Update employee fields
+        employee.naam = employee_data.naam
+        employee.voornaam = employee_data.voornaam
+        employee.tussenvoegsel = employee_data.tussenvoegsel
+        employee.achternaam = employee_data.achternaam
+        employee.initialen = employee_data.initialen
+        employee.email = employee_data.email
+        employee.telefoon = employee_data.telefoon
+        employee.adres = employee_data.adres
+        employee.huisnummer = employee_data.huisnummer
+        employee.huisnummer_toevoeging = employee_data.huisnummer_toevoeging
+        employee.postcode = employee_data.postcode
+        employee.stad = employee_data.stad
+        employee.geboortedatum = employee_data.geboortedatum
+        employee.geboorteplaats = employee_data.geboorteplaats
+        employee.geslacht = employee_data.geslacht
+        employee.burgerlijke_staat = employee_data.burgerlijke_staat
+        employee.bsn = employee_data.bsn
+        employee.nationaliteit = employee_data.nationaliteit
+        employee.in_dienst = employee_data.in_dienst
+        employee.uit_dienst = employee_data.uit_dienst
+        employee.pas_type = employee_data.pas_type
+        employee.pas_nummer = employee_data.pas_nummer
+        employee.pas_vervaldatum = employee_data.pas_vervaldatum
+        employee.contract_type = employee_data.contract_type
+        employee.contract_uren = employee_data.contract_uren
+        employee.contract_vervaldatum = employee_data.contract_vervaldatum
+        
+        db.commit()
+        db.refresh(employee)
+        
+        return EmployeeProfile(
+            employee_id=str(employee.id),
+            personeelsnummer=employee.id,
+            naam=employee.naam,
+            voornaam=employee.voornaam,
+            tussenvoegsel=employee.tussenvoegsel,
+            achternaam=employee.achternaam,
+            initialen=employee.initialen,
+            email=employee.email,
+            telefoon=employee.telefoon,
+            adres=employee.adres,
+            huisnummer=employee.huisnummer,
+            huisnummer_toevoeging=employee.huisnummer_toevoeging,
+            postcode=employee.postcode,
+            stad=employee.stad,
+            geboortedatum=employee.geboortedatum,
+            geboorteplaats=employee.geboorteplaats,
+            geslacht=employee.geslacht,
+            burgerlijke_staat=employee.burgerlijke_staat,
+            bsn=employee.bsn,
+            nationaliteit=employee.nationaliteit,
+            in_dienst=employee.in_dienst,
+            uit_dienst=employee.uit_dienst,
+            pas_type=employee.pas_type,
+            pas_nummer=employee.pas_nummer,
+            pas_vervaldatum=employee.pas_vervaldatum,
+            pas_foto=employee.pas_foto,
+            pas_foto_voorzijde=employee.pas_foto_voorzijde,
+            pas_foto_achterzijde=employee.pas_foto_achterzijde,
+            contract_type=employee.contract_type,
+            contract_uren=employee.contract_uren,
+            contract_vervaldatum=employee.contract_vervaldatum,
+            uurloner=True,
+            telefoonvergoeding_per_uur=2.0,
+            maaltijdvergoeding_per_uur=1.5,
+            de_minimis_bonus_per_uur=0.5,
+            wkr_toeslag_per_uur=1.0,
+            kilometervergoeding=0.23,
+            max_km=60,
+            hourly_allowance=BASE_WAGE
+        )
+    except Exception as e:
+        db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
 # Functie om de start- en einddatum van een vierwekenperiode te berekenen

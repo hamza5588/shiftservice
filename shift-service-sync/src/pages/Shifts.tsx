@@ -111,8 +111,9 @@ export default function Shifts() {
     queryFn: async () => {
       try {
         const result = await employeesApi.getAll();
-        // Filter to only show users with employee role
-        return result.filter(employee => employee.roles?.includes('employee'));
+        console.log('Fetched employees:', result);
+        // Remove the role filter since we want all employees
+        return result;
       } catch (error) {
         console.error('Error fetching employees:', error);
         return [];
@@ -346,8 +347,9 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
     queryFn: async () => {
       try {
         const result = await employeesApi.getAll();
-        // Filter to only show users with employee role
-        return result.filter(employee => employee.roles?.includes('employee'));
+        console.log('Fetched employees:', result);
+        // Remove the role filter since we want all employees
+        return result;
       } catch (error) {
         console.error('Error fetching employees:', error);
         return [];
@@ -359,7 +361,7 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
   const { data: clients, isLoading: isLoadingClients } = useQuery({
     queryKey: ['clients'],
     queryFn: async () => {
-      const response = await fetch('http://localhost:8000/opdrachtgevers/', {
+      const response = await fetch('/api/opdrachtgevers/', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -376,7 +378,7 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
     queryKey: ['locations', selectedClientId],
     queryFn: async () => {
       if (!selectedClientId) return [];
-      const response = await fetch(`http://localhost:8000/locations/opdrachtgever/${selectedClientId}`, {
+      const response = await fetch(`/api/locations/opdrachtgever/${selectedClientId}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -467,9 +469,9 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
   };
 
   const handleEmployeeChange = (value: string) => {
-    // Add 1 to the selected ID to match the correct employee
-    const employeeId = value ? (parseInt(value) + 1).toString() : null;
-    handleChange('employee_id', employeeId);
+    console.log('Selected employee value:', value);
+    // If "unassigned" is selected, set employee_id to null
+    handleChange('employee_id', value === 'unassigned' ? null : value);
   };
 
   return (
@@ -566,6 +568,7 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
             <div className="space-y-2">
               <Label htmlFor="employee_id">Employee</Label>
               <Select 
+                value={shift.employee_id || 'unassigned'}
                 onValueChange={handleEmployeeChange}
                 disabled={isLoadingEmployees}
               >
@@ -573,9 +576,10 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
                   <SelectValue placeholder={isLoadingEmployees ? "Loading..." : "Select employee"} />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
                   {employees?.map((employee) => (
-                    <SelectItem key={employee.id} value={employee.id.toString()}>
-                      {employee.full_name} ({employee.email})
+                    <SelectItem key={employee.employee_id} value={employee.employee_id}>
+                      {employee.naam || `${employee.voornaam} ${employee.achternaam}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -714,7 +718,10 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
     queryFn: async () => {
       try {
         const result = await employeesApi.getAll();
-        return result.filter(employee => employee.roles?.includes('employee'));
+        console.log("employe are",result)
+        console.log('Fetched employees for edit:', result);
+        // Remove the role filter since we want all employees
+        return result;
       } catch (error) {
         console.error('Error fetching employees:', error);
         return [];
@@ -726,7 +733,7 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
   const { data: clients, isLoading: isLoadingClients } = useQuery({
     queryKey: ['clients'],
     queryFn: async () => {
-      const response = await fetch('http://localhost:8000/opdrachtgevers/', {
+      const response = await fetch('/api/opdrachtgevers/', {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -743,7 +750,7 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
     queryKey: ['locations', selectedClientId],
     queryFn: async () => {
       if (!selectedClientId) return [];
-      const response = await fetch(`http://localhost:8000/locations/opdrachtgever/${selectedClientId}`, {
+      const response = await fetch(`/api/locations/opdrachtgever/${selectedClientId}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -823,6 +830,12 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
         adres: location.adres
       });
     }
+  };
+
+  const handleEmployeeChange = (value: string) => {
+    console.log('Selected employee value in edit:', value);
+    // If "unassigned" is selected, set employee_id to null
+    handleChange('employee_id', value === 'unassigned' ? null : value);
   };
 
   return (
@@ -922,7 +935,7 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
               <Label htmlFor="employee_id">Employee</Label>
               <Select 
                 value={shift.employee_id || 'unassigned'}
-                onValueChange={(value) => handleChange('employee_id', value === 'unassigned' ? null : value)}
+                onValueChange={handleEmployeeChange}
                 disabled={isLoadingEmployees}
               >
                 <SelectTrigger id="employee_id">
@@ -931,8 +944,8 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
                 <SelectContent>
                   <SelectItem value="unassigned">Unassigned</SelectItem>
                   {employees?.map((employee) => (
-                    <SelectItem key={employee.id} value={employee.username}>
-                      {employee.full_name}
+                    <SelectItem key={employee.employee_id} value={employee.employee_id}>
+                      {employee.naam || `${employee.voornaam} ${employee.achternaam}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -995,7 +1008,7 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
                   <SelectItem value="blue pass">Blue Pass</SelectItem>
-                  <SelectItem value="green pass">Green Pass</SelectItem>
+                  <SelectItem value="green pass">Gry Pass</SelectItem>
                 </SelectContent>
               </Select>
             </div>

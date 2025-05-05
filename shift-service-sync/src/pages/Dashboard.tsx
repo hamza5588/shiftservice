@@ -20,6 +20,60 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Bell, FileText, Settings } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
+interface DashboardStats {
+  total_shifts: number;
+  shift_stats: Record<string, number>;
+  total_shift_hours: number;
+  total_dienstaanvragen: number;
+  dienstaanvraag_stats: Record<string, number>;
+  total_facturen: number;
+  factuur_stats: Record<string, number>;
+  total_factuur_amount: number;
+  timestamp: string;
+}
+
+interface ServiceRequest {
+  id: number;
+  shift_id: number;
+  employee_id: string;
+  aanvraag_date: string;
+  status: 'requested' | 'approved' | 'rejected' | 'open';
+  shift_date?: string;
+  start_time?: string;
+  end_time?: string;
+  location?: string;
+  notes?: string;
+}
+
+interface PayrollEntry {
+  employee_id: string;
+  personeelsnummer: number;
+  naam: string;
+  uurloner: boolean;
+  total_days: number;
+  total_hours: number;
+  total_travel_cost: number;
+  total_telefoon: number;
+  total_maaltijd: number;
+  total_de_minimis: number;
+  total_wkr: number;
+  total_km_vergoeding: number;
+  bonus_percentage: number;
+  base_pay: number;
+  total_pay: number;
+  shifts: Array<{
+    shift_id: string;
+    date: string;
+    hours: number;
+    bonus: number;
+    travel_cost: number;
+  }>;
+  opmerkingen?: string;
+  periode?: number;
+  periode_start?: string;
+  periode_end?: string;
+}
+
 export default function Dashboard() {
   const { user } = useAuth();
 
@@ -106,7 +160,7 @@ function StatsCard({ title, value, icon, trend, isLoading }: StatsCardProps) {
 
 const AdminDashboard = () => {
   // Query for dashboard statistics
-  const { data: stats, isLoading: statsLoading } = useQuery({
+  const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ['dashboard-stats'],
     queryFn: dashboardApi.getStats,
   });
@@ -124,10 +178,25 @@ const AdminDashboard = () => {
   });
 
   // Get upcoming shifts (next 5 days)
-  const upcomingShifts = shifts?.slice(0, 5) || [];
+  const upcomingShifts = Array.isArray(shifts) ? shifts.slice(0, 5) : [];
 
-  // Get pending service requests
-  const pendingRequests = serviceRequests?.filter(req => req.status === 'requested').slice(0, 5) || [];
+  // Get pending service requests with proper null checks
+  const pendingRequests = Array.isArray(serviceRequests) 
+    ? serviceRequests.filter((req: ServiceRequest) => req && req.status === 'requested').slice(0, 5) 
+    : [];
+
+  // Ensure stats is an object before accessing properties
+  const statsData = stats || {
+    total_shifts: 0,
+    shift_stats: {},
+    total_shift_hours: 0,
+    total_dienstaanvragen: 0,
+    dienstaanvraag_stats: {},
+    total_facturen: 0,
+    factuur_stats: {},
+    total_factuur_amount: 0,
+    timestamp: new Date().toISOString()
+  };
 
   return (
     <div className="space-y-6">
@@ -138,9 +207,9 @@ const AdminDashboard = () => {
             <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.total_shifts || 0}</div>
+            <div className="text-2xl font-bold">{statsData.total_shifts || 0}</div>
             <p className="text-xs text-muted-foreground">
-              {stats?.shift_stats?.open || 0} open, {stats?.shift_stats?.completed || 0} completed
+              {statsData.shift_stats['open'] || 0} open, {statsData.shift_stats['completed'] || 0} completed
             </p>
           </CardContent>
         </Card>
@@ -150,7 +219,7 @@ const AdminDashboard = () => {
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.total_shift_hours?.toFixed(1) || 0}</div>
+            <div className="text-2xl font-bold">{statsData.total_shift_hours?.toFixed(1) || 0}</div>
             <p className="text-xs text-muted-foreground">Worked hours</p>
           </CardContent>
         </Card>
@@ -160,9 +229,9 @@ const AdminDashboard = () => {
             <ClipboardList className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.total_dienstaanvragen || 0}</div>
+            <div className="text-2xl font-bold">{statsData.total_dienstaanvragen || 0}</div>
             <p className="text-xs text-muted-foreground">
-              {stats?.dienstaanvraag_stats?.pending || 0} pending
+              {statsData.dienstaanvraag_stats['pending'] || 0} pending
             </p>
           </CardContent>
         </Card>
@@ -172,9 +241,9 @@ const AdminDashboard = () => {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">€{stats?.total_factuur_amount?.toFixed(2) || 0}</div>
+            <div className="text-2xl font-bold">€{statsData.total_factuur_amount?.toFixed(2) || 0}</div>
             <p className="text-xs text-muted-foreground">
-              {stats?.factuur_stats?.pending || 0} pending invoices
+              {statsData.factuur_stats['pending'] || 0} pending invoices
             </p>
           </CardContent>
         </Card>
@@ -235,16 +304,16 @@ const AdminDashboard = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {pendingRequests.map((request, i) => (
-                <div key={i} className="flex items-start space-x-4">
+              {Array.isArray(pendingRequests) && pendingRequests.map((request: ServiceRequest) => (
+                <div key={request.id} className="flex items-start space-x-4">
                   <Bell className="h-4 w-4 text-muted-foreground mt-1" />
                   <div>
                     <p className="text-sm font-medium">New service request</p>
-                    <p className="text-xs text-muted-foreground">From: {request.medewerker_id}</p>
+                    <p className="text-xs text-muted-foreground">From: {request.employee_id}</p>
                   </div>
                 </div>
               ))}
-              {pendingRequests.length === 0 && (
+              {(!Array.isArray(pendingRequests) || pendingRequests.length === 0) && (
                 <p className="text-sm text-muted-foreground">No recent activity</p>
               )}
             </div>
@@ -256,114 +325,163 @@ const AdminDashboard = () => {
 };
 
 const PlannerDashboard = () => {
+  // Query for dashboard statistics
+  const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
+    queryKey: ['dashboard-stats'],
+    queryFn: dashboardApi.getStats,
+  });
+
+  // Query for upcoming shifts
+  const { data: shifts, isLoading: shiftsLoading } = useQuery({
+    queryKey: ['shifts'],
+    queryFn: shiftsApi.getAll,
+  });
+
+  // Query for pending service requests
+  const { data: serviceRequests, isLoading: requestsLoading } = useQuery({
+    queryKey: ['service-requests'],
+    queryFn: serviceRequestsApi.getAll,
+  });
+
+  // Get upcoming shifts (next 5 days)
+  const upcomingShifts = Array.isArray(shifts) ? shifts.slice(0, 5) : [];
+
+  // Get pending service requests with proper null checks
+  const pendingRequests = Array.isArray(serviceRequests) 
+    ? serviceRequests.filter((req: ServiceRequest) => req && req.status === 'requested').slice(0, 5) 
+    : [];
+
+  // Ensure stats is an object before accessing properties
+  const statsData = stats || {
+    total_shifts: 0,
+    shift_stats: {},
+    total_shift_hours: 0,
+    total_dienstaanvragen: 0,
+    dienstaanvraag_stats: {},
+    total_facturen: 0,
+    factuur_stats: {},
+    total_factuur_amount: 0,
+    timestamp: new Date().toISOString()
+  };
+
   return (
     <div className="space-y-6">
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card className="col-span-2">
-          <CardHeader>
-            <CardTitle>Shift Overview</CardTitle>
-            <CardDescription>Today's schedule and assignments</CardDescription>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Shifts</CardTitle>
+            <Calendar className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div>
-                    <h3 className="font-medium">Morning Shift</h3>
-                    <p className="text-sm text-gray-500">9:00 AM - 5:00 PM</p>
-                    <p className="text-sm text-gray-500">Main Office</p>
-                  </div>
-                  <Button variant="outline" size="sm">
-                    Assign
-                  </Button>
-                </div>
-              ))}
-            </div>
+            <div className="text-2xl font-bold">{statsData.total_shifts || 0}</div>
+            <p className="text-xs text-muted-foreground">
+              {statsData.shift_stats['open'] || 0} open, {statsData.shift_stats['completed'] || 0} completed
+            </p>
           </CardContent>
         </Card>
-
         <Card>
-          <CardHeader>
-            <CardTitle>Pending Requests</CardTitle>
-            <CardDescription>Awaiting your approval</CardDescription>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Hours</CardTitle>
+            <BarChart3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="flex items-center justify-between p-4 border rounded-lg">
-                  <div>
-                    <h3 className="font-medium">Shift Change Request</h3>
-                    <p className="text-sm text-gray-500">From: John Doe</p>
-                  </div>
-                  <div className="flex space-x-2">
-                    <Button variant="outline" size="sm">Approve</Button>
-                    <Button variant="outline" size="sm">Reject</Button>
-                  </div>
-                </div>
-              ))}
-            </div>
+            <div className="text-2xl font-bold">{statsData.total_shift_hours?.toFixed(1) || 0}</div>
+            <p className="text-xs text-muted-foreground">Worked hours</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Service Requests</CardTitle>
+            <ClipboardList className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{statsData.total_dienstaanvragen || 0}</div>
+            <p className="text-xs text-muted-foreground">
+              {statsData.dienstaanvraag_stats['pending'] || 0} pending
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">€{statsData.total_factuur_amount?.toFixed(2) || 0}</div>
+            <p className="text-xs text-muted-foreground">
+              {statsData.factuur_stats['pending'] || 0} pending invoices
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <Card>
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <Card className="col-span-2">
           <CardHeader>
-            <CardTitle>Quick Assign</CardTitle>
-            <CardDescription>Assign shifts quickly</CardDescription>
+            <CardTitle>Quick Actions</CardTitle>
+            <CardDescription>Common planner tasks</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
-              <div className="grid gap-2">
-                <label className="text-sm font-medium">Select Employee</label>
-                <select className="w-full p-2 border rounded-md">
-                  <option>John Doe</option>
-                  <option>Jane Smith</option>
-                  <option>Mike Johnson</option>
-                </select>
-              </div>
-              <div className="grid gap-2">
-                <label className="text-sm font-medium">Select Shift</label>
-                <select className="w-full p-2 border rounded-md">
-                  <option>Morning Shift (9:00 AM - 5:00 PM)</option>
-                  <option>Evening Shift (5:00 PM - 1:00 AM)</option>
-                  <option>Night Shift (1:00 AM - 9:00 AM)</option>
-                </select>
-              </div>
-              <Button className="w-full">Assign Shift</Button>
+            <div className="grid gap-4 md:grid-cols-2">
+              <Link to="/shifts">
+                <Button variant="outline" className="w-full justify-start">
+                  <Calendar className="mr-2 h-4 w-4" />
+                  Manage Shifts
+                </Button>
+              </Link>
+              <Link to="/service-requests">
+                <Button variant="outline" className="w-full justify-start">
+                  <ClipboardList className="mr-2 h-4 w-4" />
+                  Service Requests
+                </Button>
+              </Link>
+              <Link to="/employees">
+                <Button variant="outline" className="w-full justify-start">
+                  <Users className="mr-2 h-4 w-4" />
+                  Employee Profiles
+                </Button>
+              </Link>
+              <Link to="/payroll">
+                <Button variant="outline" className="w-full justify-start">
+                  <DollarSign className="mr-2 h-4 w-4" />
+                  Payroll
+                </Button>
+              </Link>
+              <Link to="/invoicing">
+                <Button variant="outline" className="w-full justify-start">
+                  <FileText className="mr-2 h-4 w-4" />
+                  Invoicing
+                </Button>
+              </Link>
+              <Link to="/settings">
+                <Button variant="outline" className="w-full justify-start">
+                  <Settings className="mr-2 h-4 w-4" />
+                  Settings
+                </Button>
+              </Link>
             </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader>
-            <CardTitle>Favorites</CardTitle>
-            <CardDescription>Frequently used locations and employees</CardDescription>
+            <CardTitle>Recent Activity</CardTitle>
+            <CardDescription>Latest updates and notifications</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div>
-                <h3 className="font-medium mb-2">Locations</h3>
-                <div className="space-y-2">
-                  {['Main Office', 'Branch Office', 'Remote'].map((location) => (
-                    <div key={location} className="flex items-center justify-between p-2 border rounded-lg">
-                      <span>{location}</span>
-                      <Button variant="ghost" size="sm">Use</Button>
-                    </div>
-                  ))}
+              {Array.isArray(pendingRequests) && pendingRequests.map((request: ServiceRequest) => (
+                <div key={request.id} className="flex items-start space-x-4">
+                  <Bell className="h-4 w-4 text-muted-foreground mt-1" />
+                  <div>
+                    <p className="text-sm font-medium">New service request</p>
+                    <p className="text-xs text-muted-foreground">From: {request.employee_id}</p>
+                  </div>
                 </div>
-              </div>
-              <div>
-                <h3 className="font-medium mb-2">Employees</h3>
-                <div className="space-y-2">
-                  {['John Doe', 'Jane Smith', 'Mike Johnson'].map((employee) => (
-                    <div key={employee} className="flex items-center justify-between p-2 border rounded-lg">
-                      <span>{employee}</span>
-                      <Button variant="ghost" size="sm">Assign</Button>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              ))}
+              {(!Array.isArray(pendingRequests) || pendingRequests.length === 0) && (
+                <p className="text-sm text-muted-foreground">No recent activity</p>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -384,7 +502,9 @@ const EmployeeDashboard = () => {
   // Query for upcoming shifts
   const { data: shifts, isLoading: shiftsLoading } = useQuery({
     queryKey: ['my-shifts'],
-    queryFn: shiftsApi.getMyShifts,
+    queryFn: () => shiftsApi.getAll().then(shifts => 
+      Array.isArray(shifts) ? shifts.filter(shift => shift.employee_id === user?.id) : []
+    ),
   });
 
   // Query for service requests
@@ -400,10 +520,21 @@ const EmployeeDashboard = () => {
   });
 
   // Get upcoming shifts (next 5 days)
-  const upcomingShifts = shifts?.slice(0, 5) || [];
+  const upcomingShifts = Array.isArray(shifts) ? shifts.slice(0, 5) : [];
 
-  // Get pending service requests
-  const pendingRequests = serviceRequests?.filter(req => req.status === 'requested').slice(0, 5) || [];
+  // Get pending service requests with proper null checks
+  const pendingRequests = Array.isArray(serviceRequests) 
+    ? serviceRequests.filter(req => req && req.status === 'requested').slice(0, 5) 
+    : [];
+
+  // Ensure payroll is an array before reducing
+  const totalHours = Array.isArray(payroll) 
+    ? payroll.reduce((sum: number, entry: PayrollEntry) => sum + (entry.total_hours || 0), 0).toFixed(1) 
+    : '0';
+
+  const totalEarnings = Array.isArray(payroll) 
+    ? payroll.reduce((sum: number, entry: PayrollEntry) => sum + (entry.total_pay || 0), 0).toFixed(2) 
+    : '0';
 
   return (
     <div className="space-y-6">
@@ -422,13 +553,13 @@ const EmployeeDashboard = () => {
         />
         <StatsCard
           title="Total Hours"
-          value={payroll?.reduce((sum, entry) => sum + entry.hours_worked, 0).toFixed(1) || '0'}
+          value={totalHours}
           icon={<BarChart3 className="h-4 w-4" />}
           isLoading={payrollLoading}
         />
         <StatsCard
           title="Total Earnings"
-          value={`€${payroll?.reduce((sum, entry) => sum + entry.total_earnings, 0).toFixed(2) || '0'}`}
+          value={`€${totalEarnings}`}
           icon={<DollarSign className="h-4 w-4" />}
           isLoading={payrollLoading}
         />
