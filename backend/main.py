@@ -39,12 +39,12 @@ app = FastAPI(
 # Configure CORS - MUST BE BEFORE ANY ROUTES
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins since we're using Nginx as a proxy
+    allow_origins=["http://209.23.8.75"],  # Use the exact frontend origin
     allow_credentials=True,
     allow_methods=["*"],  # Allow all methods
     allow_headers=["*"],  # Allow all headers
     expose_headers=["*"],  # Expose all headers
-    max_age=3600,  # Cache preflight requests for 1 hour
+    max_age=3600  # Cache preflight requests for 1 hour
 )
 
 # Create database tables and initialize admin on startup
