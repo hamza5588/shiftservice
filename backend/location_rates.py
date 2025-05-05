@@ -10,7 +10,7 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 router = APIRouter(
-    prefix="/api/location-rates",
+    prefix="/location-rates",
     tags=["location-rates"]
 )
 

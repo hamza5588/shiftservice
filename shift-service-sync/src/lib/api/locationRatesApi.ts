@@ -1,8 +1,8 @@
 import { LocationRate, LocationRateCreate } from '../types';
 import { api } from '../api';
 
-// Use the correct endpoint with /api prefix
-const baseUrl = '/api/location-rates';
+// Use the correct endpoint without /api prefix since it's included in API_BASE_URL
+const baseUrl = '/location-rates';
 
 export class LocationRatesApi {
   constructor() {
