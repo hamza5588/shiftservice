@@ -55,8 +55,8 @@ services:
       - ./shift-service-sync:/app
       - /app/node_modules
     environment:
-      - VITE_API_URL=http://209.23.8.75:8000
-     
+      - VITE_API_URL=/api
+      - VITE_ENVIRONMENT=production
     depends_on:
       - backend
     networks:

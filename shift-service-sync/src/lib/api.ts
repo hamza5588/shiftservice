@@ -44,7 +44,13 @@ export async function apiRequest<T>(
       throw new Error('No authentication token found');
     }
 
-    const response = await fetch(`${baseURL}${endpoint}`, {
+    // Ensure endpoint starts with a forward slash
+    const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    const url = `${baseURL}${normalizedEndpoint}`;
+    
+    console.log('Making API request to:', url);  // Debug log
+
+    const response = await fetch(url, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
@@ -54,9 +60,10 @@ export async function apiRequest<T>(
     });
 
     if (!response.ok) {
-      const errorData = await response.json();
+      const errorData = await response.json().catch(() => ({}));
       console.error('API request failed:', {
-        endpoint,
+        url,
+        endpoint: normalizedEndpoint,
         status: response.status,
         statusText: response.statusText,
         data: errorData,
