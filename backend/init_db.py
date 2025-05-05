@@ -3,6 +3,7 @@ from models import Base, User, Role
 from passlib.context import CryptContext
 from add_locations import add_locations
 from add_clients import add_clients
+from sqlalchemy import text
 import logging
 
 # Set up logging
@@ -32,6 +33,36 @@ def init_db():
                     logger.info("Provincie column already exists in locations table")
             except Exception as e:
                 logger.warning(f"Error checking/adding provincie column: {str(e)}")
+        
+        # Check if year_client column exists in facturen table
+        result = connection.execute(text("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='facturen' AND column_name='year_client';
+        """)).fetchone()
+        
+        if not result:
+            logger.info("Adding year_client column to facturen table...")
+            # Add the column if it doesn't exist
+            connection.execute(text("""
+                ALTER TABLE facturen
+                ADD COLUMN year_client VARCHAR(7) NULL;
+            """))
+            
+            # Update existing records
+            connection.execute(text("""
+                UPDATE facturen 
+                SET year_client = SUBSTRING(factuurnummer, 1, 7)
+                WHERE factuurnummer IS NOT NULL;
+            """))
+            
+            # Add index
+            connection.execute(text("""
+                CREATE INDEX ix_facturen_year_client ON facturen (year_client);
+            """))
+            logger.info("Successfully added year_client column and index")
+        else:
+            logger.info("year_client column already exists in facturen table")
         
         db = SessionLocal()
         try:

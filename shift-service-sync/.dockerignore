@@ -33,3 +33,4 @@ build
 __tests__
 *.test.*
 *.spec.* 
+*.pyc
