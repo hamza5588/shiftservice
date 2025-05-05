@@ -3,3 +3,8 @@ USERNAME="root"
 PASSWORD="4YnfBLFU4yYXShQ6"
 
 git config --global user.email "y7hamzakhanswati@gmail.com"
+
+
+IPv4 Address: 69.28.85.212
+Username: root
+Password: agLvMryUqFP9EtJ2
