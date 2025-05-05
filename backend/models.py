@@ -176,6 +176,7 @@ class Factuur(Base):
     opdrachtgever_id = Column(Integer, ForeignKey("opdrachtgevers.id"))
     opdrachtgever_naam = Column(String(100))
     factuurnummer = Column(String(50), unique=True, index=True, nullable=False)  # Format: YYYYCCCNNN-DDD
+    year_client = Column(String(7), index=True)  # Generated column for YYYYCCC part
     locatie = Column(String(200))
     factuurdatum = Column(Date)
     shift_date = Column(Date)  # Start date of the shift period
@@ -193,6 +194,11 @@ class Factuur(Base):
     
     # Relationships
     opdrachtgever = relationship("Opdrachtgever", back_populates="facturen")
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        if self.factuurnummer:
+            self.year_client = self.factuurnummer[:7]  # Extract YYYYCCC part
 
     __table_args__ = (
         # Add index for year and client combination to help with invoice number generation
