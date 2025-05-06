@@ -439,8 +439,7 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
       provincie: shift.provincie,
       adres: shift.adres,
       required_profile: shift.required_profile,
-      reiskilometers: shift.reiskilometers || 0,
-      locatie: selectedLocation?.naam || ''
+      reiskilometers: shift.reiskilometers || 0
     };
 
     // Submit to the API
