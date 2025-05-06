@@ -7,6 +7,7 @@ from database import get_db
 from models import Shift as DBShift, User, Location, AutoApproval
 from auth import get_current_user, require_roles
 from auto_approval import check_auto_approval_eligibility
+import traceback
 
 router = APIRouter(
     prefix="/planning",
@@ -20,11 +21,12 @@ class ShiftBase(BaseModel):
     location_id: int
     employee_id: Optional[str] = None
     status: str = "open"
-    titel: Optional[str] = None
+    title: Optional[str] = None
     stad: Optional[str] = None
     provincie: Optional[str] = None
     adres: Optional[str] = None
     required_profile: Optional[str] = None
+    reiskilometers: Optional[float] = None
 
     class Config:
         json_encoders = {
@@ -250,7 +252,8 @@ async def get_my_shift(
 @router.post("/", response_model=ShiftResponse)
 async def create_shift(shift: ShiftCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     try:
-        print(f"Creating shift with data: {shift}")
+        print(f"Creating shift with data: {shift.dict()}")
+        print(f"Employee ID from request: {shift.employee_id}")
         
         # Check if location exists
         location = db.query(Location).filter(Location.id == shift.location_id).first()
@@ -262,40 +265,44 @@ async def create_shift(shift: ShiftCreate, db: Session = Depends(get_db), curren
         # If employee_id is provided, verify it exists and check auto-approval
         medewerker_id = None
         if shift.employee_id:
-            # First get the employee
-            employee = db.query(User).filter(User.id == str(int(shift.employee_id) + 1)).first()
-            if not employee:
-                raise HTTPException(status_code=404, detail="Employee not found")
-            
-            print(f"Found employee: {employee.username}, ID: {employee.id}")
-            medewerker_id = employee.username  # Use username instead of ID
+            try:
+                print(f"Looking up employee with ID/username: {shift.employee_id}")
+                # Try to find employee by both ID and username
+                employee = db.query(User).filter(
+                    (User.id == shift.employee_id) | (User.username == shift.employee_id)
+                ).first()
+                if not employee:
+                    print(f"No employee found with ID/username: {shift.employee_id}")
+                    raise HTTPException(status_code=404, detail=f"Employee not found with ID/username: {shift.employee_id}")
+                
+                print(f"Found employee: {employee.username}, ID: {employee.id}")
+                medewerker_id = employee.username  # Use username for consistency
 
-            # Check if this employee has auto-approval for this location
-            print(f"Checking auto-approval for employee username {employee.username} at location {location.naam}")
-            auto_approval = db.query(AutoApproval).filter(
-                AutoApproval.employee_id == employee.username,  # Use username instead of ID
-                AutoApproval.location == location.naam,
-                AutoApproval.auto_approve == True
-            ).first()
+                # Check if this employee has auto-approval for this location
+                print(f"Checking auto-approval for employee username {employee.username} at location {location.naam}")
+                auto_approval = db.query(AutoApproval).filter(
+                    AutoApproval.employee_id == employee.username,
+                    AutoApproval.location == location.naam,
+                    AutoApproval.auto_approve == True
+                ).first()
 
-            # Print all auto-approval settings for debugging
-            all_settings = db.query(AutoApproval).all()
-            print("All auto-approval settings:")
-            for setting in all_settings:
-                print(f"Setting: employee_id={setting.employee_id}, location={setting.location}, auto_approve={setting.auto_approve}")
-
-            print(f"Auto-approval check result: {auto_approval}")
-            if auto_approval:
-                print("Auto-approval found, setting status to approved")
-                shift.status = "approved"
-            else:
-                print("No auto-approval found, status remains:", shift.status)
+                if auto_approval:
+                    print("Auto-approval found, setting status to approved")
+                    shift.status = "approved"
+                else:
+                    print("No auto-approval found, status remains:", shift.status)
+            except Exception as e:
+                print(f"Error processing employee: {str(e)}")
+                print(f"Error type: {type(e)}")
+                print(f"Error args: {e.args}")
+                raise HTTPException(status_code=400, detail=f"Error processing employee: {str(e)}")
 
         # Format times to HH:MM format
         start_time = ':'.join(shift.start_time.split(':')[:2])  # Keep only hours and minutes
         end_time = ':'.join(shift.end_time.split(':')[:2])
 
         print(f"Creating shift with status: {shift.status}")
+        print(f"Using medewerker_id: {medewerker_id}")
 
         # Create the shift in the database
         db_shift = DBShift(
@@ -303,15 +310,18 @@ async def create_shift(shift: ShiftCreate, db: Session = Depends(get_db), curren
             start_tijd=start_time,
             eind_tijd=end_time,
             location_id=shift.location_id,
-            locatie=location.naam,  # Set the location name for auto-approval matching
-            medewerker_id=medewerker_id,  # This is now the username
+            locatie=location.naam,
+            medewerker_id=medewerker_id,
             status=shift.status,
-            titel=shift.titel,
+            titel=shift.title,
             stad=shift.stad,
             provincie=shift.provincie,
             adres=shift.adres,
-            required_profile=shift.required_profile
+            required_profile=shift.required_profile,
+            reiskilometers=float(shift.reiskilometers) if shift.reiskilometers is not None else None
         )
+        
+        print(f"Created DBShift object: {db_shift.__dict__}")
         
         db.add(db_shift)
         db.commit()
@@ -325,24 +335,30 @@ async def create_shift(shift: ShiftCreate, db: Session = Depends(get_db), curren
             shift_date = shift_date.isoformat()
 
         # Return the created shift with proper string formats
-        return ShiftResponse(
-            shift_date=shift_date,  # Now a string
-            start_time=db_shift.start_tijd,  # Already in HH:MM format
-            end_time=db_shift.eind_tijd,  # Already in HH:MM format
+        response = ShiftResponse(
+            shift_date=shift_date,
+            start_time=db_shift.start_tijd,
+            end_time=db_shift.eind_tijd,
             location_id=db_shift.location_id,
             status=db_shift.status,
             id=db_shift.id,
-            employee_id=db_shift.medewerker_id,  # This will be the username
-            titel=db_shift.titel or "",
+            employee_id=db_shift.medewerker_id,
+            title=db_shift.titel or "",
             stad=db_shift.stad or "",
             provincie=db_shift.provincie or "",
             adres=db_shift.adres or "",
             required_profile=db_shift.required_profile,
-            location=db_shift.locatie
+            location=db_shift.locatie,
+            reiskilometers=db_shift.reiskilometers
         )
+        print(f"Returning response: {response.dict()}")
+        return response
     except Exception as e:
         db.rollback()
         print(f"Error creating shift: {str(e)}")
+        print(f"Error type: {type(e)}")
+        print(f"Error args: {e.args}")
+        print(f"Error traceback: {traceback.format_exc()}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/available-shifts", response_model=List[ShiftResponse])
@@ -530,7 +546,7 @@ async def update_shift(
     db_shift.locatie = location.naam  # Update the location name
     db_shift.status = shift_update.status
     db_shift.medewerker_id = shift_update.employee_id
-    db_shift.titel = shift_update.titel
+    db_shift.titel = shift_update.title
     db_shift.stad = shift_update.stad
     db_shift.provincie = shift_update.provincie
     db_shift.adres = shift_update.adres

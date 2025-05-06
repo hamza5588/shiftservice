@@ -8,14 +8,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Database configuration
-DB_USER = os.getenv("DB_USER", "postgres")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "postgres")
-DB_HOST = os.getenv("DB_HOST", "db")  # Use 'db' as it's the service name in docker-compose
-DB_PORT = os.getenv("DB_PORT", "5432")
-DB_NAME = os.getenv("DB_NAME", "planner")
+DB_USER = os.getenv("DB_USER", "planner_user")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "planner_password")
+DB_HOST = os.getenv("DB_HOST", "localhost")
+DB_PORT = os.getenv("DB_PORT", "3306")
+DB_NAME = os.getenv("DB_NAME", "planner_db")
 
 # Create database URL
-DATABASE_URL = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+DATABASE_URL = f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 def check_user_exists(username=None, email=None):
     """Check if a user exists in the database by username or email."""
@@ -26,7 +26,7 @@ def check_user_exists(username=None, email=None):
         session = Session()
 
         # Build query
-        query = "SELECT id, username, email, full_name FROM users WHERE "
+        query = "SELECT id, username, email, full_name, hashed_password FROM users WHERE "
         params = {}
         
         if username:
@@ -49,6 +49,7 @@ def check_user_exists(username=None, email=None):
                 print(f"Username: {user[1]}")
                 print(f"Email: {user[2]}")
                 print(f"Full Name: {user[3]}")
+                print(f"Hashed Password: {user[4]}")
                 print("-" * 30)
         else:
             print("\nNo user found with the given criteria.")

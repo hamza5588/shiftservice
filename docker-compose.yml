@@ -55,8 +55,7 @@ services:
       - ./shift-service-sync:/app
       - /app/node_modules
     environment:
-      - VITE_API_URL=/api
-      - VITE_ENVIRONMENT=production
+      - VITE_API_URL=http://planner_backend:8000
     depends_on:
       - backend
     networks:

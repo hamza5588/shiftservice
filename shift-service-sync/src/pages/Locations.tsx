@@ -27,7 +27,7 @@ import {
   SelectValue,
 } from '../components/ui/select';
 import { toast } from 'sonner';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL } from '../config/api';
 
 interface Location {
   id: number;

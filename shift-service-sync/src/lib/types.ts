@@ -14,19 +14,23 @@ export interface Shift {
   start_time: string;
   end_time: string;
   location_id: number;
+  employee_id: string | null;
+  status: string;
+  title: string;
+  stad?: string;
+  provincie?: string;
+  adres?: string;
+  required_profile: string | null;
   location?: string;
   location_details?: {
+    id: number;
+    naam: string;
+    adres: string;
     stad: string;
     provincie: string;
-    adres: string;
   };
-  status: StatusType;
-  employee_id?: string;
-  title: string;
-  required_profile?: string;
-  opdrachtgever_id?: number;
-  created_at?: string;
-  updated_at?: string;
+  reiskilometers?: number;
+  assigned_by_admin?: boolean;
 }
 
 export interface ServiceRequest {
@@ -192,11 +196,7 @@ export interface Location {
   naam: string;
   adres: string;
   stad: string;
-  postcode: string;
-  provincie?: string;
-  opdrachtgever_id?: number;
-  created_at?: string;
-  updated_at?: string;
+  provincie: string;
 }
 
 export interface CreateInvoicePayload {

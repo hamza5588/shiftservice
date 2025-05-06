@@ -17,6 +17,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Switch } from '../components/ui/switch';
 import { useToast } from '../hooks/useToast';
 import { hasRole } from '../lib/permissions';
+import { authService } from '../lib/auth';
 
 const AutoApprovalSettings: React.FC = () => {
     const { user } = useAuth();
@@ -42,20 +43,58 @@ const AutoApprovalSettings: React.FC = () => {
         const fetchData = async () => {
             try {
                 setError(null);
+                console.log('Fetching data...');
+                console.log('Auth token:', localStorage.getItem('token'));
+                console.log('User roles:', user.roles);
+
+                // First check if we can get the current user
+                try {
+                    const currentUser = await authService.getCurrentUser();
+                    console.log('Current user data:', currentUser);
+                } catch (userError) {
+                    console.error('Error getting current user:', userError);
+                    if (userError.response?.status === 401) {
+                        setError('Session expired - Please login again');
+                        authService.logout();
+                        return;
+                    }
+                }
+
                 const [settingsData, locationsData, employeesData] = await Promise.all([
                     autoApprovalService.getAllSettings(),
                     autoApprovalService.getLocations(),
                     autoApprovalService.getEmployees()
                 ]);
 
-                console.log('Fetched data:', { settingsData, locationsData, employeesData });
+                console.log('Fetched data:', {
+                    settingsData,
+                    locationsData,
+                    employeesData,
+                    employeesLength: employeesData?.length
+                });
+
+                if (!employeesData || employeesData.length === 0) {
+                    console.warn('No employees data received');
+                }
 
                 setSettings(settingsData);
                 setLocations(locationsData);
                 setEmployees(employeesData);
             } catch (error: any) {
                 console.error('Error in fetchData:', error);
-                if (error.response) {
+                console.error('Error details:', {
+                    message: error.message,
+                    response: error.response?.data,
+                    status: error.response?.status,
+                    headers: error.response?.headers
+                });
+                
+                if (error.response?.status === 401) {
+                    setError('Session expired - Please login again');
+                    authService.logout();
+                } else if (error.response?.status === 403) {
+                    setError('You do not have permission to access this data');
+                } else if (error.response) {
                     setError(`Server error: ${error.response.status} - ${error.response.data?.detail || 'Unknown error'}`);
                 } else if (error.request) {
                     setError('Could not connect to the server. Please make sure the backend server is running.');

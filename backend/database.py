@@ -3,16 +3,17 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 
-# Get database URL from environment variable or use default
-DATABASE_URL = os.getenv("DATABASE_URL", "mysql://planner_user:planner_password@planner_mysql:3306/planner_db")
+# Database connection settings
+DB_USER = os.getenv("DB_USER", "planner_user")
+DB_PASSWORD = os.getenv("DB_PASSWORD", "planner_password")
+DB_HOST = os.getenv("DB_HOST", "planner_mysql")  # Use Docker service name
+DB_PORT = os.getenv("DB_PORT", "3306")
+DB_NAME = os.getenv("DB_NAME", "planner_db")
 
-# Create SQLAlchemy engine with connection pooling
+# Create SQLAlchemy engine using PyMySQL
 engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True,  # Enable connection health checks
-    pool_recycle=3600,   # Recycle connections after 1 hour
-    pool_size=5,         # Maintain 5 connections
-    max_overflow=10      # Allow up to 10 additional connections
+    f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}",
+    echo=True
 )
 
 # Create SessionLocal class

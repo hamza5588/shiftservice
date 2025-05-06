@@ -67,10 +67,10 @@ class EmployeeResponse(BaseModel):
     max_km: int
     hourly_allowance: float
     naam: str
-    voornaam: str
+    voornaam: Optional[str] = None
     tussenvoegsel: Optional[str] = None
-    achternaam: str
-    initialen: str
+    achternaam: Optional[str] = None
+    initialen: Optional[str] = None
     telefoon: Optional[str] = None
     adres: Optional[str] = None
     huisnummer: Optional[str] = None
@@ -119,49 +119,49 @@ async def get_medewerkers(
                     logger.warning(f"No user found for medewerker {medewerker.id}")
                     continue
                     
-                employee_data = EmployeeResponse(
-                    id=medewerker.id,
-                    username=medewerker.user.username,
-                    email=medewerker.email,
-                    full_name=medewerker.naam,
-                    roles=[role.name for role in medewerker.user.roles],
-                    personeelsnummer=medewerker.id,
-                    uurloner=medewerker.contract_type == "Uurloner",
-                    telefoonvergoeding_per_uur=2.0,
-                    maaltijdvergoeding_per_uur=1.5,
-                    de_minimis_bonus_per_uur=0.5,
-                    wkr_toeslag_per_uur=1.0,
-                    kilometervergoeding=0.23,
-                    max_km=60,
-                    hourly_allowance=15.0,
-                    naam=medewerker.naam,
-                    voornaam=medewerker.voornaam,
-                    tussenvoegsel=medewerker.tussenvoegsel,
-                    achternaam=medewerker.achternaam,
-                    initialen=medewerker.initialen,
-                    telefoon=medewerker.telefoon,
-                    adres=medewerker.adres,
-                    huisnummer=medewerker.huisnummer,
-                    huisnummer_toevoeging=medewerker.huisnummer_toevoeging,
-                    postcode=medewerker.postcode,
-                    stad=medewerker.stad,
-                    geboortedatum=medewerker.geboortedatum,
-                    geboorteplaats=medewerker.geboorteplaats,
-                    geslacht=medewerker.geslacht,
-                    burgerlijke_staat=medewerker.burgerlijke_staat,
-                    bsn=medewerker.bsn,
-                    nationaliteit=medewerker.nationaliteit,
-                    in_dienst=medewerker.in_dienst,
-                    uit_dienst=medewerker.uit_dienst,
-                    pas_type=medewerker.pas_type,
-                    pas_nummer=medewerker.pas_nummer,
-                    pas_vervaldatum=medewerker.pas_vervaldatum,
-                    pas_foto=medewerker.pas_foto,
-                    contract_type=medewerker.contract_type,
-                    contract_uren=medewerker.contract_uren,
-                    contract_vervaldatum=medewerker.contract_vervaldatum,
-                    contract_bestand=medewerker.contract_bestand
-                )
+                employee_data = {
+                    "id": medewerker.id,
+                    "username": medewerker.user.username,
+                    "email": medewerker.email,
+                    "full_name": medewerker.naam,
+                    "roles": [role.name for role in medewerker.user.roles],
+                    "personeelsnummer": medewerker.id,
+                    "uurloner": medewerker.contract_type == "Uurloner",
+                    "telefoonvergoeding_per_uur": 2.0,
+                    "maaltijdvergoeding_per_uur": 1.5,
+                    "de_minimis_bonus_per_uur": 0.5,
+                    "wkr_toeslag_per_uur": 1.0,
+                    "kilometervergoeding": 0.23,
+                    "max_km": 60,
+                    "hourly_allowance": 15.0,
+                    "naam": medewerker.naam,
+                    "voornaam": medewerker.voornaam,
+                    "tussenvoegsel": medewerker.tussenvoegsel,
+                    "achternaam": medewerker.achternaam,
+                    "initialen": medewerker.initialen,
+                    "telefoon": medewerker.telefoon,
+                    "adres": medewerker.adres,
+                    "huisnummer": medewerker.huisnummer,
+                    "huisnummer_toevoeging": medewerker.huisnummer_toevoeging,
+                    "postcode": medewerker.postcode,
+                    "stad": medewerker.stad,
+                    "geboortedatum": medewerker.geboortedatum,
+                    "geboorteplaats": medewerker.geboorteplaats,
+                    "geslacht": medewerker.geslacht,
+                    "burgerlijke_staat": medewerker.burgerlijke_staat,
+                    "bsn": medewerker.bsn,
+                    "nationaliteit": medewerker.nationaliteit,
+                    "in_dienst": medewerker.in_dienst,
+                    "uit_dienst": medewerker.uit_dienst,
+                    "pas_type": medewerker.pas_type,
+                    "pas_nummer": medewerker.pas_nummer,
+                    "pas_vervaldatum": medewerker.pas_vervaldatum,
+                    "pas_foto": medewerker.pas_foto,
+                    "contract_type": medewerker.contract_type,
+                    "contract_uren": medewerker.contract_uren,
+                    "contract_vervaldatum": medewerker.contract_vervaldatum,
+                    "contract_bestand": medewerker.contract_bestand
+                }
                 result.append(employee_data)
                 logger.debug(f"Employee: {medewerker.naam}, {medewerker.email}")
             except Exception as e:

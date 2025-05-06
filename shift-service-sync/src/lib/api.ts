@@ -1,6 +1,6 @@
 import { Shift, ServiceRequest, Employee, Invoice, PayrollEntry, DashboardStats, CreateInvoicePayload, Location, Opdrachtgever, LocationRate, LocationRateCreate, EmployeeDashboardData, Role, User } from './types';
 import axios from 'axios';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL } from '../config/api';
 
 const baseURL = API_BASE_URL;
 
@@ -44,13 +44,7 @@ export async function apiRequest<T>(
       throw new Error('No authentication token found');
     }
 
-    // Ensure endpoint starts with a forward slash
-    const normalizedEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-    const url = `${baseURL}${normalizedEndpoint}`;
-    
-    console.log('Making API request to:', url);  // Debug log
-
-    const response = await fetch(url, {
+    const response = await fetch(`${baseURL}${endpoint}`, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
@@ -60,10 +54,9 @@ export async function apiRequest<T>(
     });
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
+      const errorData = await response.json();
       console.error('API request failed:', {
-        url,
-        endpoint: normalizedEndpoint,
+        endpoint,
         status: response.status,
         statusText: response.statusText,
         data: errorData,

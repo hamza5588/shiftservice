@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { AutoApprovalSetting } from '../types/autoApproval';
 import { authService } from '../lib/auth';
-import { API_BASE_URL } from '../config';
+import { API_BASE_URL } from '../config/api';
 
 const API_URL = API_BASE_URL;
 
@@ -50,20 +50,22 @@ export const autoApprovalService = {
     },
 
     // Get all employees
-    async getEmployees(): Promise<{ id: string; name: string; username: string }[]> {
+    async getEmployees(): Promise<Employee[]> {
         try {
             const response = await api.get('/medewerkers/');
-            return response.data.map((emp: any) => ({
-                id: emp.id.toString(),
-                name: emp.full_name,
-                username: emp.username
+            return response.data.map((employee: any) => ({
+                id: employee.id,
+                name: employee.naam || `${employee.voornaam || ''} ${employee.tussenvoegsel || ''} ${employee.achternaam || ''}`.trim(),
+                username: employee.username
             }));
-        } catch (error: any) {
-            console.error('Error fetching employees:', error);
-            if (error.response) {
-                throw new Error(error.response.data?.detail || 'Failed to fetch employees');
+        } catch (error) {
+            if (axios.isAxiosError(error)) {
+                if (error.response?.status === 401) {
+                    throw new Error('Authentication required');
+                }
+                throw new Error(error.response?.data?.detail || 'Failed to fetch employees');
             }
-            throw error;
+            throw new Error('Network error while fetching employees');
         }
     },
 

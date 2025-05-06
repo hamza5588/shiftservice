@@ -160,6 +160,7 @@ class Shift(Base):
     adres = Column(String(200), nullable=True)
     required_profile = Column(String(100), nullable=True)
     factuur_id = Column(Integer, ForeignKey("facturen.id"), nullable=True)
+    reiskilometers = Column(Float, nullable=True)  # Add reiskilometers field
 
     medewerker = relationship("User", back_populates="shifts")
     dienstaanvragen = relationship("Dienstaanvraag", back_populates="shift")

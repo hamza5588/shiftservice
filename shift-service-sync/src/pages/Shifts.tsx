@@ -416,11 +416,11 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate required fields
-    if (!shift.shift_date || !shift.start_time || !shift.end_time || !shift.location_id || !shift.titel) {
+    // Only validate the most essential fields
+    if (!shift.shift_date || !shift.start_time || !shift.end_time || !shift.location_id) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields",
+        description: "Please fill in the date, time, and location",
         variant: "destructive",
       });
       return;
@@ -434,11 +434,11 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
       location_id: shift.location_id,
       employee_id: shift.employee_id || null,
       status: shift.status || 'open',
-      titel: shift.titel,
-      stad: shift.stad,
-      provincie: shift.provincie,
-      adres: shift.adres,
-      required_profile: shift.required_profile,
+      title: shift.title || '',
+      stad: shift.stad || null,
+      provincie: shift.provincie || null,
+      adres: shift.adres || null,
+      required_profile: shift.required_profile || null,
       reiskilometers: shift.reiskilometers || 0
     };
 
@@ -461,17 +461,25 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
     const location = locations?.find((loc: any) => loc.id.toString() === locationId);
     setSelectedLocation(location);
     handleChange('location_id', parseInt(locationId));
+    // Only auto-fill if the fields are empty
     if (location) {
-      handleChange('stad', location.stad);
-      handleChange('provincie', location.provincie);
-      handleChange('adres', location.adres);
+      if (!shift.stad) handleChange('stad', location.stad || '');
+      if (!shift.provincie) handleChange('provincie', location.provincie || '');
+      if (!shift.adres) handleChange('adres', location.adres || '');
     }
   };
 
   const handleEmployeeChange = (value: string) => {
     console.log('Selected employee value:', value);
     // If "unassigned" is selected, set employee_id to null
-    handleChange('employee_id', value === 'unassigned' ? null : value);
+    if (value === 'unassigned') {
+      handleChange('employee_id', null);
+    } else {
+      // Find the employee in the list to get their username
+      const selectedEmployee = employees?.find(emp => emp.employee_id === value);
+      console.log('Selected employee:', selectedEmployee);
+      handleChange('employee_id', selectedEmployee?.username || null);
+    }
   };
 
   return (
@@ -578,7 +586,7 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
                 <SelectContent>
                   <SelectItem value="unassigned">Unassigned</SelectItem>
                   {employees?.map((employee) => (
-                    <SelectItem key={employee.employee_id} value={employee.employee_id}>
+                    <SelectItem key={employee.employee_id} value={employee.username}>
                       {employee.naam || `${employee.voornaam} ${employee.achternaam}`}
                     </SelectItem>
                   ))}
@@ -647,7 +655,7 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
               <Label htmlFor="stad">City</Label>
               <Input
                 id="stad"
-                value={selectedLocation?.stad || ''}
+                value={shift.stad || ''}
                 onChange={(e) => handleChange('stad', e.target.value)}
               />
             </div>
@@ -657,7 +665,7 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
               <Label htmlFor="provincie">Province</Label>
               <Input
                 id="provincie"
-                value={selectedLocation?.provincie || ''}
+                value={shift.provincie || ''}
                 onChange={(e) => handleChange('provincie', e.target.value)}
               />
             </div>
@@ -667,7 +675,7 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
               <Label htmlFor="adres">Address</Label>
               <Input
                 id="adres"
-                value={selectedLocation?.adres || ''}
+                value={shift.adres || ''}
                 onChange={(e) => handleChange('adres', e.target.value)}
               />
             </div>
@@ -835,7 +843,14 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
   const handleEmployeeChange = (value: string) => {
     console.log('Selected employee value in edit:', value);
     // If "unassigned" is selected, set employee_id to null
-    handleChange('employee_id', value === 'unassigned' ? null : value);
+    if (value === 'unassigned') {
+      handleChange('employee_id', null);
+    } else {
+      // Find the employee in the list to get their username
+      const selectedEmployee = employees?.find(emp => emp.employee_id === value);
+      console.log('Selected employee:', selectedEmployee);
+      handleChange('employee_id', selectedEmployee?.username || null);
+    }
   };
 
   return (
@@ -944,7 +959,7 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
                 <SelectContent>
                   <SelectItem value="unassigned">Unassigned</SelectItem>
                   {employees?.map((employee) => (
-                    <SelectItem key={employee.employee_id} value={employee.employee_id}>
+                    <SelectItem key={employee.employee_id} value={employee.username}>
                       {employee.naam || `${employee.voornaam} ${employee.achternaam}`}
                     </SelectItem>
                   ))}
