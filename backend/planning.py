@@ -263,7 +263,7 @@ async def create_shift(shift: ShiftCreate, db: Session = Depends(get_db), curren
         medewerker_id = None
         if shift.employee_id:
             # First get the employee
-            employee = db.query(User).filter(User.id == str(int(shift.employee_id) + 1)).first()
+            employee = db.query(User).filter(User.username == shift.employee_id).first()
             if not employee:
                 raise HTTPException(status_code=404, detail="Employee not found")
             
