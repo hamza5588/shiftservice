@@ -475,10 +475,10 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
     if (value === 'unassigned') {
       handleChange('employee_id', null);
     } else {
-      // Find the employee in the list to get their username
+      // Find the employee in the list to get their employee_id
       const selectedEmployee = employees?.find(emp => emp.employee_id === value);
       console.log('Selected employee:', selectedEmployee);
-      handleChange('employee_id', selectedEmployee?.username || null);
+      handleChange('employee_id', selectedEmployee?.employee_id || null);
     }
   };
 
@@ -586,8 +586,8 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
                 <SelectContent>
                   <SelectItem value="unassigned">Unassigned</SelectItem>
                   {employees?.map((employee) => (
-                    <SelectItem key={employee.employee_id} value={employee.username}>
-                      {employee.naam || `${employee.voornaam} ${employee.achternaam}`}
+                    <SelectItem key={employee.employee_id} value={employee.employee_id}>
+                      {employee.naam || `${employee.voornaam || ''} ${employee.achternaam || ''}`}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -719,6 +719,13 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
   const [date, setDate] = useState<Date>(() => new Date(initialShift.shift_date));
   const [selectedClientId, setSelectedClientId] = useState<string>(initialShift.opdrachtgever_id?.toString() || '');
   const [filteredLocations, setFilteredLocations] = useState<Location[]>([]);
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
+
+  // Update selectedEmployeeId when initialShift changes
+  useEffect(() => {
+    console.log('Initial shift employee_id:', initialShift.employee_id);
+    setSelectedEmployeeId(initialShift.employee_id || null);
+  }, [initialShift]);
 
   // Query for employees
   const { data: employees, isLoading: isLoadingEmployees } = useQuery({
@@ -842,16 +849,22 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
 
   const handleEmployeeChange = (value: string) => {
     console.log('Selected employee value in edit:', value);
+    
     // If "unassigned" is selected, set employee_id to null
     if (value === 'unassigned') {
+      setSelectedEmployeeId(null);
       handleChange('employee_id', null);
     } else {
-      // Find the employee in the list to get their username
-      const selectedEmployee = employees?.find(emp => emp.employee_id === value);
-      console.log('Selected employee:', selectedEmployee);
-      handleChange('employee_id', selectedEmployee?.username || null);
+      setSelectedEmployeeId(value);
+      handleChange('employee_id', value);
     }
   };
+
+  // Debug log for employee selection
+  useEffect(() => {
+    console.log('Current selectedEmployeeId:', selectedEmployeeId);
+    console.log('Current shift employee_id:', shift.employee_id);
+  }, [selectedEmployeeId, shift.employee_id]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -949,18 +962,22 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
             <div className="space-y-2">
               <Label htmlFor="employee_id">Employee</Label>
               <Select 
-                value={shift.employee_id || 'unassigned'}
+                value={selectedEmployeeId || 'unassigned'}
                 onValueChange={handleEmployeeChange}
                 disabled={isLoadingEmployees}
               >
                 <SelectTrigger id="employee_id">
-                  <SelectValue placeholder={isLoadingEmployees ? "Loading..." : "Select employee"} />
+                  <SelectValue placeholder={isLoadingEmployees ? "Loading..." : "Select employee"}>
+                    {selectedEmployeeId ? 
+                      employees?.find(emp => emp.employee_id === selectedEmployeeId)?.naam || 'Unknown' 
+                      : 'Unassigned'}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="unassigned">Unassigned</SelectItem>
                   {employees?.map((employee) => (
-                    <SelectItem key={employee.employee_id} value={employee.username}>
-                      {employee.naam || `${employee.voornaam} ${employee.achternaam}`}
+                    <SelectItem key={employee.employee_id} value={employee.employee_id}>
+                      {employee.naam || `${employee.voornaam || ''} ${employee.achternaam || ''}`}
                     </SelectItem>
                   ))}
                 </SelectContent>

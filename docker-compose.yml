@@ -49,7 +49,7 @@ services:
       context: ./shift-service-sync
       dockerfile: Dockerfile
       args:
-        - VITE_API_URL=http://209.23.8.75:8000
+        - VITE_API_URL=http://69.28.88.75:8000
     container_name: planner_frontend
     ports:
       - "80:80"
@@ -57,7 +57,7 @@ services:
       - ./shift-service-sync:/app
       - /app/node_modules
     environment:
-      - VITE_API_URL=http://209.23.8.75:8000
+      - VITE_API_URL=http://69.28.88.75:8000
     depends_on:
       - backend
     networks:
