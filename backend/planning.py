@@ -46,7 +46,7 @@ class ShiftResponse(ShiftBase):
     employee_id: Optional[str] = None
     titel: str = ""
     stad: str = ""
-    provincie: str = ""
+    provincie: Optional[str] = ""
     adres: str = ""
     required_profile: Optional[str] = None
 
@@ -72,6 +72,18 @@ class Shift(BaseModel):
     provincie: Optional[str] = None
     adres: Optional[str] = None
     required_profile: Optional[str] = None
+
+class BulkShiftCreate(BaseModel):
+    start_date: str
+    end_date: str
+    start_time: str
+    end_time: str
+    location_id: int
+    num_employees: int
+    selected_days: List[int]  # 0 = Monday, 6 = Sunday
+    title: Optional[str] = None
+    required_profile: Optional[str] = None
+    reiskilometers: Optional[float] = None
 
 # In-memory database
 fake_shifts_db = []
@@ -701,3 +713,91 @@ async def get_my_shifts(
         shifts.append(shift)
     
     return shifts
+
+@router.post("/bulk", response_model=List[ShiftResponse])
+async def create_bulk_shifts(
+    bulk_shift: BulkShiftCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles(["admin", "planner"]))
+):
+    """Create multiple shifts for selected days within a date range."""
+    try:
+        # Convert dates to datetime objects
+        start_date = datetime.strptime(bulk_shift.start_date, "%Y-%m-%d").date()
+        end_date = datetime.strptime(bulk_shift.end_date, "%Y-%m-%d").date()
+        
+        # Get location details
+        location = db.query(Location).filter(Location.id == bulk_shift.location_id).first()
+        if not location:
+            raise HTTPException(status_code=404, detail="Location not found")
+        
+        # Format times to HH:MM format
+        start_time = ':'.join(bulk_shift.start_time.split(':')[:2])
+        end_time = ':'.join(bulk_shift.end_time.split(':')[:2])
+        
+        created_shifts = []
+        current_date = start_date
+        
+        # Create shifts for each day in the range that matches selected days
+        while current_date <= end_date:
+            # Check if current day is in selected days (0 = Monday, 6 = Sunday)
+            if current_date.weekday() in bulk_shift.selected_days:
+                # Create the specified number of shifts for this day
+                for _ in range(bulk_shift.num_employees):
+                    db_shift = DBShift(
+                        datum=current_date,
+                        start_tijd=start_time,
+                        eind_tijd=end_time,
+                        location_id=bulk_shift.location_id,
+                        locatie=location.naam,
+                        medewerker_id=None,  # No employee assigned initially
+                        status="open",
+                        titel=bulk_shift.title,
+                        stad=location.stad,
+                        provincie=location.provincie,
+                        adres=location.adres,
+                        required_profile=bulk_shift.required_profile,
+                        reiskilometers=bulk_shift.reiskilometers
+                    )
+                    
+                    db.add(db_shift)
+                    created_shifts.append(db_shift)
+            
+            # Move to next day
+            current_date += timedelta(days=1)
+        
+        db.commit()
+        
+        # Refresh all created shifts to get their IDs
+        for shift in created_shifts:
+            db.refresh(shift)
+        
+        # Convert to response model
+        response_shifts = []
+        for shift in created_shifts:
+            response_shifts.append(ShiftResponse(
+                id=shift.id,
+                shift_date=shift.datum.isoformat(),
+                start_time=shift.start_tijd,
+                end_time=shift.eind_tijd,
+                location_id=shift.location_id,
+                status=shift.status,
+                employee_id=shift.medewerker_id,
+                title=shift.titel,
+                stad=shift.stad or "",
+                provincie=shift.provincie or "",
+                adres=shift.adres or "",
+                required_profile=shift.required_profile,
+                location=shift.locatie,
+                reiskilometers=shift.reiskilometers
+            ))
+        
+        return response_shifts
+        
+    except Exception as e:
+        db.rollback()
+        print(f"Error creating bulk shifts: {str(e)}")
+        print(f"Error type: {type(e)}")
+        print(f"Error args: {e.args}")
+        print(f"Error traceback: {traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))

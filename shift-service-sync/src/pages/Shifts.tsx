@@ -40,6 +40,27 @@ import { useAuth } from '@/lib/AuthContext';
 import { hasPermission, Permissions } from '@/lib/permissions';
 import { useNavigate } from 'react-router-dom';
 
+// Add these interfaces at the top of the file, after the imports
+interface Location {
+  id: number;
+  naam: string;
+  stad: string;
+  provincie?: string;
+  adres?: string;
+}
+
+interface Client {
+  id: number;
+  naam: string;
+}
+
+interface Employee {
+  employee_id: string;
+  naam?: string;
+  voornaam?: string;
+  achternaam?: string;
+}
+
 export default function Shifts() {
   const navigate = useNavigate();
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -49,6 +70,7 @@ export default function Shifts() {
   const [selectedDate, setSelectedDate] = useState<Date>();
   const { toast } = useToast();
   const { user } = useAuth();
+  const [isBulkDialogOpen, setIsBulkDialogOpen] = useState(false);
 
   const userRoles = user?.roles || [];
   const canCreateShifts = hasPermission(userRoles, Permissions.CREATE_SHIFTS);
@@ -167,11 +189,18 @@ export default function Shifts() {
       <div className="flex items-center justify-between mb-6">
         <h1 className="page-title m-0">Shift Planning</h1>
         
-        {canCreateShifts && (
-          <Button onClick={() => setIsAddDialogOpen(true)}>
-            <Plus className="mr-2 h-4 w-4" /> Add Shift
-          </Button>
-        )}
+        <div className="flex gap-2">
+          {canCreateShifts && (
+            <>
+              <Button onClick={() => setIsBulkDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" /> Bulk Create
+              </Button>
+              <Button onClick={() => setIsAddDialogOpen(true)}>
+                <Plus className="mr-2 h-4 w-4" /> Add Shift
+              </Button>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Filters */}
@@ -319,6 +348,15 @@ export default function Shifts() {
           onOpenChange={setIsEditDialogOpen}
           onSuccess={() => refetch()}
           shift={selectedShift}
+        />
+      )}
+
+      {/* Bulk Create Dialog */}
+      {canCreateShifts && (
+        <BulkShiftDialog 
+          open={isBulkDialogOpen} 
+          onOpenChange={setIsBulkDialogOpen} 
+          onSuccess={() => refetch()}
         />
       )}
     </div>
@@ -717,7 +755,7 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
   const { toast } = useToast();
   const [shift, setShift] = useState<Shift>(initialShift);
   const [date, setDate] = useState<Date>(() => new Date(initialShift.shift_date));
-  const [selectedClientId, setSelectedClientId] = useState<string>(initialShift.opdrachtgever_id?.toString() || '');
+  const [clientId, setClientId] = useState<string>('');
   const [filteredLocations, setFilteredLocations] = useState<Location[]>([]);
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string | null>(null);
 
@@ -762,10 +800,10 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
 
   // Query for locations based on selected client
   const { data: locations, isLoading: isLoadingLocations } = useQuery({
-    queryKey: ['locations', selectedClientId],
+    queryKey: ['locations', clientId],
     queryFn: async () => {
-      if (!selectedClientId) return [];
-      const response = await fetch(`/api/locations/opdrachtgever/${selectedClientId}`, {
+      if (!clientId) return [];
+      const response = await fetch(`/api/locations/opdrachtgever/${clientId}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -775,17 +813,17 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
       }
       return response.json();
     },
-    enabled: !!selectedClientId,
+    enabled: !!clientId,
   });
 
   // Update filtered locations when client changes
   useEffect(() => {
-    if (selectedClientId && locations) {
+    if (clientId && locations) {
       setFilteredLocations(locations);
     } else {
       setFilteredLocations([]);
     }
-  }, [selectedClientId, locations]);
+  }, [clientId, locations]);
 
   // Mutation for updating shifts
   const { mutate: updateShift, isPending: isUpdating } = useMutation({
@@ -828,21 +866,23 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
     setShift(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleClientChange = (clientId: string) => {
-    setSelectedClientId(clientId);
-    handleChange('opdrachtgever_id', Number(clientId));
+  const handleClientChange = (value: string) => {
+    setClientId(value);
+    handleChange('opdrachtgever_id', Number(value));
     handleChange('location_id', undefined);
   };
 
   const handleLocationChange = (locationId: string) => {
-    const location = locations?.find((loc: any) => loc.id.toString() === locationId);
+    const location = locations?.find((loc: Location) => loc.id.toString() === locationId);
     handleChange('location_id', Number(locationId));
     if (location) {
       handleChange('location', location.naam);
       handleChange('location_details', {
+        id: location.id,
+        naam: location.naam,
+        adres: location.adres || '',
         stad: location.stad,
-        provincie: location.provincie,
-        adres: location.adres
+        provincie: location.provincie || ''
       });
     }
   };
@@ -878,7 +918,7 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
             <div className="space-y-2">
               <Label htmlFor="client_id">Client *</Label>
               <Select
-                value={selectedClientId}
+                value={clientId}
                 onValueChange={handleClientChange}
                 disabled={isLoadingClients}
               >
@@ -886,7 +926,7 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
                   <SelectValue placeholder={isLoadingClients ? "Loading clients..." : "Select a client"} />
                 </SelectTrigger>
                 <SelectContent>
-                  {clients?.map((client: any) => (
+                  {clients?.map((client: Client) => (
                     <SelectItem key={client.id} value={client.id.toString()}>
                       {client.naam}
                     </SelectItem>
@@ -901,12 +941,12 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
               <Select
                 value={shift.location_id?.toString()}
                 onValueChange={handleLocationChange}
-                disabled={isLoadingLocations || !selectedClientId}
+                disabled={isLoadingLocations || !clientId}
               >
                 <SelectTrigger id="location_id">
                   <SelectValue 
                     placeholder={
-                      !selectedClientId 
+                      !clientId 
                         ? "Select a client first" 
                         : isLoadingLocations 
                           ? "Loading locations..." 
@@ -1079,6 +1119,413 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
               {isUpdating && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Update Shift
             </Button>
+          </div>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+interface BulkShiftDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSuccess: () => void;
+}
+
+function BulkShiftDialog({ open, onOpenChange, onSuccess }: BulkShiftDialogProps) {
+  const { toast } = useToast();
+  const [startDate, setStartDate] = useState<Date>();
+  const [endDate, setEndDate] = useState<Date>();
+  const [selectedClientId, setSelectedClientId] = useState<string>('');
+  const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
+  const [numEmployees, setNumEmployees] = useState<number>(1);
+  const [selectedDays, setSelectedDays] = useState<number[]>([0, 1, 2, 3, 4, 5, 6]); // Default all days selected
+  const [shiftDetails, setShiftDetails] = useState({
+    start_time: '',
+    end_time: '',
+    title: '',
+    required_profile: '',
+    reiskilometers: 0
+  });
+
+  const daysOfWeek = [
+    { value: 0, label: 'Monday' },
+    { value: 1, label: 'Tuesday' },
+    { value: 2, label: 'Wednesday' },
+    { value: 3, label: 'Thursday' },
+    { value: 4, label: 'Friday' },
+    { value: 5, label: 'Saturday' },
+    { value: 6, label: 'Sunday' }
+  ];
+
+  // Query for employees
+  const { data: employees, isLoading: isLoadingEmployees } = useQuery<Employee[]>({
+    queryKey: ['employees'],
+    queryFn: async () => {
+      try {
+        const result = await employeesApi.getAll();
+        console.log('Fetched employees:', result);
+        return result;
+      } catch (error) {
+        console.error('Error fetching employees:', error);
+        return [];
+      }
+    },
+  });
+
+  // Query for clients
+  const { data: clients, isLoading: isLoadingClients } = useQuery<Client[]>({
+    queryKey: ['clients'],
+    queryFn: async () => {
+      const response = await fetch('/api/opdrachtgevers/', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch clients');
+      }
+      return response.json();
+    },
+  });
+
+  // Query for locations
+  const { data: locations, isLoading: isLoadingLocations } = useQuery<Location[]>({
+    queryKey: ['locations', selectedClientId],
+    queryFn: async () => {
+      if (!selectedClientId) return [];
+      const response = await fetch(`/api/locations/opdrachtgever/${selectedClientId}`, {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch locations');
+      }
+      return response.json();
+    },
+    enabled: !!selectedClientId,
+  });
+
+  // Calculate total shifts to be created
+  const totalShifts = React.useMemo(() => {
+    if (!startDate || !endDate) return 0;
+    
+    let days = 0;
+    let currentDate = startDate;
+    while (currentDate <= endDate) {
+      if (selectedDays.includes(currentDate.getDay())) {
+        days++;
+      }
+      currentDate = new Date(currentDate.getTime() + 24 * 60 * 60 * 1000);
+    }
+    
+    return days * numEmployees;
+  }, [startDate, endDate, numEmployees, selectedDays]);
+
+  // Mutation for creating bulk shifts
+  const { mutate: createBulkShifts, isPending: isCreating } = useMutation({
+    mutationFn: async (data: any) => {
+      const response = await fetch('/api/planning/bulk', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        },
+        body: JSON.stringify(data)
+      });
+      if (!response.ok) {
+        throw new Error('Failed to create bulk shifts');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Bulk shifts created successfully",
+      });
+      onOpenChange(false);
+      onSuccess();
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create bulk shifts",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleDayToggle = (day: number) => {
+    setSelectedDays(prev => {
+      if (prev.includes(day)) {
+        return prev.filter(d => d !== day);
+      } else {
+        return [...prev, day].sort();
+      }
+    });
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!startDate || !endDate || !shiftDetails.start_time || !shiftDetails.end_time || 
+        !selectedClientId || !selectedLocation || numEmployees < 1 || selectedDays.length === 0) {
+      toast({
+        title: "Validation Error",
+        description: "Please fill in all required fields and select at least one day",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const data = {
+      start_date: format(startDate, 'yyyy-MM-dd'),
+      end_date: format(endDate, 'yyyy-MM-dd'),
+      start_time: shiftDetails.start_time,
+      end_time: shiftDetails.end_time,
+      location_id: selectedLocation.id,
+      num_employees: numEmployees,
+      selected_days: selectedDays,
+      title: shiftDetails.title,
+      required_profile: shiftDetails.required_profile,
+      reiskilometers: shiftDetails.reiskilometers
+    };
+
+    createBulkShifts(data);
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-[550px]">
+        <DialogHeader>
+          <DialogTitle>Bulk Create Shifts</DialogTitle>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Date Range */}
+            <div className="space-y-2">
+              <Label>Start Date *</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !startDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {startDate ? format(startDate, 'PPP') : <span>Select date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={startDate}
+                    onSelect={setStartDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="space-y-2">
+              <Label>End Date *</Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className={cn(
+                      "w-full justify-start text-left font-normal",
+                      !endDate && "text-muted-foreground"
+                    )}
+                  >
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {endDate ? format(endDate, 'PPP') : <span>Select date</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={endDate}
+                    onSelect={setEndDate}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            {/* Time Range */}
+            <div className="space-y-2">
+              <Label>Start Time *</Label>
+              <div className="relative">
+                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="time"
+                  className="pl-9"
+                  value={shiftDetails.start_time}
+                  onChange={(e) => setShiftDetails(prev => ({ ...prev, start_time: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label>End Time *</Label>
+              <div className="relative">
+                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="time"
+                  className="pl-9"
+                  value={shiftDetails.end_time}
+                  onChange={(e) => setShiftDetails(prev => ({ ...prev, end_time: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            {/* Days Selection */}
+            <div className="sm:col-span-2 space-y-2">
+              <Label>Select Days *</Label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {daysOfWeek.map((day) => (
+                  <div key={day.value} className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id={`day-${day.value}`}
+                      checked={selectedDays.includes(day.value)}
+                      onChange={() => handleDayToggle(day.value)}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                    <label htmlFor={`day-${day.value}`} className="text-sm">
+                      {day.label}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Number of Employees */}
+            <div className="space-y-2">
+              <Label>Number of Employees Needed *</Label>
+              <Input
+                type="number"
+                min="1"
+                value={numEmployees}
+                onChange={(e) => setNumEmployees(Math.max(1, parseInt(e.target.value) || 1))}
+                className="w-full"
+              />
+            </div>
+
+            {/* Client Selection */}
+            <div className="space-y-2">
+              <Label>Client *</Label>
+              <Select
+                value={selectedClientId}
+                onValueChange={setSelectedClientId}
+                disabled={isLoadingClients}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder={isLoadingClients ? "Loading clients..." : "Select a client"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients?.map((client: any) => (
+                    <SelectItem key={client.id} value={client.id.toString()}>
+                      {client.naam}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Location Selection */}
+            <div className="space-y-2">
+              <Label>Location *</Label>
+              <Select
+                value={selectedLocation?.id?.toString()}
+                onValueChange={(value) => {
+                  const location = locations?.find((loc: any) => loc.id.toString() === value);
+                  setSelectedLocation(location);
+                }}
+                disabled={isLoadingLocations || !selectedClientId}
+              >
+                <SelectTrigger>
+                  <SelectValue 
+                    placeholder={
+                      !selectedClientId 
+                        ? "Select a client first" 
+                        : isLoadingLocations 
+                          ? "Loading locations..." 
+                          : "Select a location"
+                    } 
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {locations?.map((location: any) => (
+                    <SelectItem key={location.id} value={location.id.toString()}>
+                      {location.naam} - {location.stad}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Title */}
+            <div className="space-y-2">
+              <Label>Title</Label>
+              <Input
+                value={shiftDetails.title}
+                onChange={(e) => setShiftDetails(prev => ({ ...prev, title: e.target.value }))}
+                placeholder="Shift title"
+              />
+            </div>
+
+            {/* Required Profile */}
+            <div className="space-y-2">
+              <Label>Required Profile</Label>
+              <Select 
+                value={shiftDetails.required_profile}
+                onValueChange={(value) => setShiftDetails(prev => ({ ...prev, required_profile: value }))}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select profile" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="blue pass">Blue Pass</SelectItem>
+                  <SelectItem value="green pass">Green Pass</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Travel Distance */}
+            <div className="space-y-2">
+              <Label>Travel Distance (km)</Label>
+              <Input
+                type="number"
+                min="0"
+                value={shiftDetails.reiskilometers}
+                onChange={(e) => setShiftDetails(prev => ({ ...prev, reiskilometers: parseFloat(e.target.value) }))}
+              />
+            </div>
+
+            {/* Summary */}
+            <div className="sm:col-span-2 p-4 bg-muted rounded-lg">
+              <h4 className="font-medium mb-2">Summary</h4>
+              <p>Total shifts to be created: {totalShifts}</p>
+              {startDate && endDate && (
+                <p>Date range: {format(startDate, 'MMM d')} - {format(endDate, 'MMM d, yyyy')}</p>
+              )}
+              <p>Selected days: {selectedDays.map(d => daysOfWeek[d].label).join(', ')}</p>
+              <p>Employees needed per selected day: {numEmployees}</p>
+            </div>
+
+            <div className="sm:col-span-2 flex justify-end space-x-2">
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={isCreating}>
+                {isCreating ? "Creating..." : "Create Shifts"}
+              </Button>
+            </div>
           </div>
         </form>
       </DialogContent>
