@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   mysql:
     image: mysql:5.7
@@ -54,6 +56,18 @@ services:
       DATABASE_URL: mysql+pymysql://planner_user:planner_password@mysql:3306/planner_db
     command: python invoice_generation_weekly.py
 
+  frontend:
+    build:
+      context: ./shift-service-sync
+      dockerfile: Dockerfile
+      args:
+        VITE_API_URL: "http://209.23.8.75:8000"
+    container_name: planner_frontend
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+    restart: always
+
 volumes:
   mysql_data:
-
