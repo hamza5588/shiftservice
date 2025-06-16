@@ -142,47 +142,23 @@ def generate_invoice(db: Session, opdrachtgever_id: int, start_date: date, end_d
         total_amount = 0.0
         invoice_text = []
         
-        # Process each location
         for location, location_shifts in shifts_by_location.items():
-            logger.info(f"Processing location: {location}")
+            location_total = 0.0
+            invoice_text.append(f"\nLocation: {location}")
             
-            # Get location rate
-            location_rate = db.query(LocationRate).filter(
-                LocationRate.location_id == location_shifts[0].location_id,
-                LocationRate.pass_type == location_shifts[0].required_profile
-            ).first()
-            
-            if not location_rate:
-                logger.warning(f"No rate found for location {location} and profile {location_shifts[0].required_profile}, using default rate")
-                base_rate = 20.0  # Default rate
-            else:
-                base_rate = location_rate.base_rate
-            
-            # Calculate amount for this location
-            location_amount = 0.0
             for shift in location_shifts:
-                # Calculate hours
-                hours = (shift.end_time - shift.start_time).total_seconds() / 3600
+                # Calculate shift amount
+                start_time = datetime.strptime(shift.start_tijd, "%H:%M").time()
+                end_time = datetime.strptime(shift.eind_tijd, "%H:%M").time()
+                hours = calculate_hours(start_time, end_time)
+                amount = hours * shift.tarief
+                location_total += amount
                 
-                # Apply rate multipliers based on time
-                if is_holiday(shift.datum):
-                    rate = base_rate * 1.5  # Holiday rate
-                elif is_weekend(shift.datum):
-                    rate = base_rate * 1.35  # Weekend rate
-                elif shift.start_time.hour >= 22 or shift.start_time.hour < 6:
-                    rate = base_rate * 1.2  # Night rate
-                elif shift.start_time.hour >= 18:
-                    rate = base_rate * 1.1  # Evening rate
-                else:
-                    rate = base_rate  # Day rate
-                
-                shift_amount = hours * rate
-                location_amount += shift_amount
-                
-                # Add shift details to invoice text
-                invoice_text.append(f"{hours:.1f}h {location} €{rate:.2f} {shift.datum.strftime('%d-%m-%Y')} €{shift_amount:.2f}")
+                invoice_text.append(f"Date: {shift.datum}")
+                invoice_text.append(f"Hours: {hours:.2f} x €{shift.tarief:.2f} = €{amount:.2f}")
             
-            total_amount += location_amount
+            total_amount += location_total
+            invoice_text.append(f"Location Total: €{location_total:.2f}\n")
         
         # Calculate VAT
         vat = total_amount * 0.21
@@ -190,10 +166,34 @@ def generate_invoice(db: Session, opdrachtgever_id: int, start_date: date, end_d
         
         logger.info(f"Generated invoice with total amount: {total_amount}, VAT: {vat}, Total incl. VAT: {total_with_vat}")
         
+        # Generate invoice number in the correct format YYYYCCCNNN-DDD
+        current_year = datetime.now().year
+        client_number = str(opdrachtgever_id).zfill(3)
+        client_digit = shifts[0].opdrachtgever.naam[:3].upper()
+        
+        # Find the last invoice for this client in the current year
+        last_invoice = db.query(Factuur).filter(
+            Factuur.factuurnummer.like(f"{current_year}{client_number}%")
+        ).order_by(Factuur.factuurnummer.desc()).first()
+        
+        # Get the next count
+        if last_invoice and last_invoice.factuurnummer:
+            try:
+                last_count = int(last_invoice.factuurnummer[7:10])
+                next_count = last_count + 1
+            except (ValueError, IndexError):
+                next_count = 1
+        else:
+            next_count = 1
+        
+        # Format the invoice number
+        factuurnummer = f"{current_year}{client_number}{next_count:03d}-{client_digit}"
+        
         # Create invoice
         invoice = Factuur(
             opdrachtgever_id=opdrachtgever_id,
             opdrachtgever_naam=shifts[0].opdrachtgever.naam,
+            factuurnummer=factuurnummer,
             locatie=shifts[0].locatie,
             factuurdatum=date.today(),
             shift_date=start_date,

@@ -101,14 +101,28 @@ export interface Invoice {
   shift_date: string;
   shift_date_end: string;
   bedrag: number;
-  status: string;
+  status: 'open' | 'sent' | 'paid' | 'cancelled';
   factuur_text: string;
+  subtotal: number;
+  vat_amount: number;
+  total_amount: number;
+  breakdown: {
+    day: { hours: number; rate: number; total: number };
+    evening: { hours: number; rate: number; total: number };
+    night: { hours: number; rate: number; total: number };
+    weekend: { hours: number; rate: number; total: number };
+    holiday: { hours: number; rate: number; total: number };
+    new_year_eve: { hours: number; rate: number; total: number };
+  };
   kvk_nummer?: string;
   adres?: string;
   postcode?: string;
   stad?: string;
   telefoon?: string;
   email?: string;
+  client_name?: string;
+  issue_date: string;
+  due_date: string;
 }
 
 export interface InvoiceCreate {
@@ -193,10 +207,13 @@ export interface Opdrachtgever {
 
 export interface Location {
   id: number;
+  opdrachtgever_id: number;
   naam: string;
   adres: string;
   stad: string;
-  provincie: string;
+  postcode: string;
+  provincie?: string;
+  email?: string;
 }
 
 export interface CreateInvoicePayload {
@@ -204,23 +221,21 @@ export interface CreateInvoicePayload {
   opdrachtgever_naam: string;
   locatie: string;
   factuurdatum: string;
-  shift_date?: string;
+  shift_date: string;
+  shift_date_end: string;
   bedrag: number;
-  status: 'open' | 'betaald' | 'herinnering14' | 'herinnering30';
+  status: 'open' | 'sent' | 'paid' | 'cancelled';
   factuur_text: string;
-  invoice_number?: string;
-  client_name: string;
-  issue_date: string;
-  due_date: string;
-  total_amount: number;
-  vat_amount: number;
   subtotal: number;
+  vat_amount: number;
+  total_amount: number;
   breakdown: {
-    [key: string]: {
-      hours: number;
-      rate: number;
-      total: number;
-    };
+    day: { hours: number; rate: number; total: number };
+    evening: { hours: number; rate: number; total: number };
+    night: { hours: number; rate: number; total: number };
+    weekend: { hours: number; rate: number; total: number };
+    holiday: { hours: number; rate: number; total: number };
+    new_year_eve: { hours: number; rate: number; total: number };
   };
   kvk_nummer?: string;
   adres?: string;
@@ -228,6 +243,9 @@ export interface CreateInvoicePayload {
   stad?: string;
   telefoon?: string;
   email?: string;
+  client_name?: string;
+  issue_date: string;
+  due_date: string;
 }
 
 export interface LocationRate {
@@ -242,10 +260,7 @@ export interface LocationRate {
   new_years_eve_rate: number;
   created_at: string;
   updated_at: string;
-  location?: {
-    id: number;
-    naam: string;
-  };
+  location?: Location;
 }
 
 export interface LocationRateCreate {

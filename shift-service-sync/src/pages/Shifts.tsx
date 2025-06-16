@@ -682,8 +682,8 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
                   <SelectValue placeholder="Select profile" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="blue pass">Blue Pass</SelectItem>
-                  <SelectItem value="green pass">Green Pass</SelectItem>
+                  <SelectItem value="blue pass">Blue pass</SelectItem>
+                  <SelectItem value="grey pass">Grey pass</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1079,8 +1079,8 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">None</SelectItem>
-                  <SelectItem value="blue pass">Blue Pass</SelectItem>
-                  <SelectItem value="green pass">Gry Pass</SelectItem>
+                  <SelectItem value="blue pass">Blue pass</SelectItem>
+                  <SelectItem value="grey pass">Grey pass</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -1490,8 +1490,8 @@ function BulkShiftDialog({ open, onOpenChange, onSuccess }: BulkShiftDialogProps
                   <SelectValue placeholder="Select profile" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="blue pass">Blue Pass</SelectItem>
-                  <SelectItem value="green pass">Green Pass</SelectItem>
+                  <SelectItem value="blue pass">Blue pass</SelectItem>
+                  <SelectItem value="grey pass">Grey pass</SelectItem>
                 </SelectContent>
               </Select>
             </div>

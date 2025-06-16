@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   mysql:
     image: mysql:5.7
@@ -15,58 +13,47 @@ services:
       - mysql_data:/var/lib/mysql
     command: --default-authentication-plugin=mysql_native_password
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_password"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - planner_network
 
   backend:
-    build:
+    build: 
       context: ./backend
       dockerfile: Dockerfile
     container_name: planner_backend
     depends_on:
       mysql:
         condition: service_healthy
-    environment:
-      DATABASE_URL: mysql://planner_user:planner_password@planner_mysql:3306/planner_db
-      SECRET_KEY: your-secret-key-here
-      ALGORITHM: HS256
     ports:
       - "8000:8000"
     volumes:
       - ./backend:/app
       - ./backend/uploads:/app/uploads
       - ./backend/uploaded_facturen:/app/uploaded_facturen
-    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
-    networks:
-      - planner_network
-
-  frontend:
-    build:
-      context: ./shift-service-sync
-      dockerfile: Dockerfile
-      args:
-      - VITE_API_URL=http://209.23.8.75:8000
-    container_name: planner_frontend
-    ports:
-      - "80:80"
-    volumes:
-      - ./shift-service-sync:/app
-      - /app/node_modules
+      - ./backend/logs:/app/logs
     environment:
-      - VITE_API_URL=http://209.23.8.75:8000
+      DATABASE_URL: mysql+pymysql://planner_user:planner_password@mysql:3306/planner_db
+      SECRET_KEY: your-secret-key-here
+      ALGORITHM: HS256
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  invoice_scheduler:
+    build: 
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: planner_invoice_scheduler
     depends_on:
-      - backend
-    networks:
-      - planner_network
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - ./backend/logs:/app/logs
+    environment:
+      DATABASE_URL: mysql+pymysql://planner_user:planner_password@mysql:3306/planner_db
+    command: python invoice_generation_weekly.py
 
 volumes:
   mysql_data:
-
-networks:
-  planner_network:
-    driver: bridge
 

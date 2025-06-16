@@ -15,7 +15,7 @@ COPY . .
 EXPOSE 8080
 
 # Start development server with hot reload
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+CMD ["npm", "run", "dev"]
 
 # Production stage
 FROM node:18-alpine as build
@@ -50,4 +50,4 @@ COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
 
 # Start nginx
-CMD ["nginx", "-g", "daemon off;"] 
+CMD ["nginx", "-g", "daemon off;"]

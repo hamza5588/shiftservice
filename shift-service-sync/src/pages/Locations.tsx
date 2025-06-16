@@ -51,6 +51,8 @@ export default function Locations() {
   const [opdrachtgevers, setOpdrachtgevers] = useState<Opdrachtgever[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedClient, setSelectedClient] = useState<string>('all');
   const [formData, setFormData] = useState({
     naam: '',
     adres: '',
@@ -191,6 +193,19 @@ export default function Locations() {
     });
   };
 
+  const filteredLocations = locations.filter((location) => {
+    const matchesSearch = 
+      (location.naam?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (location.adres?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (location.stad?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (location.postcode?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (location.email?.toLowerCase() || '').includes(searchTerm.toLowerCase());
+    
+    const matchesClient = selectedClient === 'all' || location.opdrachtgever_id.toString() === selectedClient;
+    
+    return matchesSearch && matchesClient;
+  });
+
   return (
     <div className="container mx-auto py-8">
       <div className="flex justify-between items-center mb-6">
@@ -304,6 +319,38 @@ export default function Locations() {
         </Dialog>
       </div>
 
+      <div className="flex gap-4 mb-6">
+        <div className="flex-1">
+          <Input
+            placeholder="Search locations..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="w-full"
+          />
+        </div>
+        <div className="w-64">
+          <Select
+            value={selectedClient}
+            onValueChange={setSelectedClient}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Filter by client" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Clients</SelectItem>
+              {opdrachtgevers.map((opdrachtgever) => (
+                <SelectItem
+                  key={opdrachtgever.id}
+                  value={opdrachtgever.id.toString()}
+                >
+                  {opdrachtgever.naam}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       <Table>
         <TableHeader>
           <TableRow>
@@ -317,7 +364,7 @@ export default function Locations() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {locations.map((location) => (
+          {filteredLocations.map((location) => (
             <TableRow key={location.id}>
               <TableCell>{location.naam}</TableCell>
               <TableCell>{location.adres}</TableCell>

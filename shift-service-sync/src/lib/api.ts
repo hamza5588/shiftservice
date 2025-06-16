@@ -33,38 +33,81 @@ api.interceptors.response.use(
   }
 );
 
-// Helper function for making API requests
 export async function apiRequest<T>(
   endpoint: string,
-  options: RequestInit = {}
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
+  data?: any,
+  requiresAuth: boolean = true
 ): Promise<T> {
-  try {
+  const headers: HeadersInit = {
+    'Content-Type': 'application/json',
+  };
+
+  if (requiresAuth) {
     const token = localStorage.getItem('token');
     if (!token) {
       throw new Error('No authentication token found');
     }
+    headers['Authorization'] = `Bearer ${token}`;
+  }
 
-    const response = await fetch(`${baseURL}${endpoint}`, {
-      ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${token}`,
-        ...options.headers,
-      },
-    });
+  const config: RequestInit = {
+    method,
+    headers,
+    credentials: 'include',
+  };
+
+  if (data) {
+    config.body = JSON.stringify(data);
+  }
+
+  try {
+    const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+    const responseData = await response.json();
 
     if (!response.ok) {
-      const errorData = await response.json();
-      console.error('API request failed:', {
-        endpoint,
+      console.error('Error response data:', responseData);
+      
+      // Log detailed error information
+      console.error('API Error Details:', {
         status: response.status,
         statusText: response.statusText,
-        data: errorData,
+        errorData: responseData,
+        endpoint,
+        method,
+        requestData: data
       });
-      throw new Error(errorData.detail || `API request failed: ${response.status} ${response.statusText}`);
+
+      let errorMessage = 'An error occurred';
+
+      // Handle different error response formats
+      if (responseData.detail) {
+        if (typeof responseData.detail === 'string') {
+          errorMessage = responseData.detail;
+        } else if (Array.isArray(responseData.detail)) {
+          errorMessage = responseData.detail.join(', ');
+        } else if (typeof responseData.detail === 'object') {
+          // Handle field-specific errors
+          const fieldErrors = Object.entries(responseData.detail)
+            .map(([field, errors]) => `${field}: ${Array.isArray(errors) ? errors.join(', ') : errors}`)
+            .join('; ');
+          errorMessage = fieldErrors || 'Validation error';
+        }
+      } else if (responseData.message) {
+        errorMessage = responseData.message;
+      } else if (responseData.error) {
+        errorMessage = responseData.error;
+      }
+
+      // Create a custom error with the message
+      const error = new Error(errorMessage);
+      // Add additional properties to the error object
+      (error as any).status = response.status;
+      (error as any).responseData = responseData;
+      throw error;
     }
 
-    return response.json();
+    return responseData;
   } catch (error) {
     console.error('API request error:', error);
     throw error;
@@ -153,10 +196,10 @@ export const employeesApi = {
 
 // API functions for invoices
 export const invoicesApi = {
-  getAll: () => apiRequest<Invoice[]>('/facturen/'),
+  getAll: () => apiRequest<Invoice[]>('/facturen'),
   getById: (id: number) => apiRequest<Invoice>(`/facturen/${id}`),
-  getByNumber: (factuurnummer: string) => apiRequest<Invoice>(`/facturen/nummer/${factuurnummer}`),
-  create: (data: CreateInvoicePayload) => apiRequest<Invoice>('/facturen/', {
+  getByNumber: (number: string) => apiRequest<Invoice>(`/facturen/nummer/${number}`),
+  create: (data: CreateInvoicePayload) => apiRequest<Invoice>('/facturen', {
     method: 'POST',
     body: JSON.stringify(data)
   }),
@@ -167,72 +210,12 @@ export const invoicesApi = {
   delete: (id: number) => apiRequest<void>(`/facturen/${id}`, {
     method: 'DELETE'
   }),
-  deleteByFactuurnummer: (factuurnummer: string) => apiRequest<void>(`/invoice-payroll/facturen/nummer/${factuurnummer}`, {
-    method: 'DELETE',
-  }),
-  markAsPaid: (id: number) => apiRequest<Invoice>(`/facturen/${id}/mark-paid`, {
-    method: 'POST'
-  }),
-  upload: (id: number, file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    return apiRequest<{ url: string }>(`/facturen/${id}/upload`, {
-      method: 'POST',
-      body: formData,
-      headers: {
-        Accept: 'application/json'
-      }
-    });
-  },
-  listUploads: (id: number) => apiRequest<{ files: string[] }>(`/facturen/${id}/uploads`),
-  download: async (id: number) => {
-    const response = await fetch(`${baseURL}/facturen/${id}/download`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Accept': 'application/pdf'
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to download invoice');
+  send: (id: number) => apiRequest<Invoice>(`/facturen/${id}/send`, 'POST'),
+  exportPdf: () => apiRequest<Blob>('/facturen/pdf-export', {
+    headers: {
+      'Accept': 'application/pdf'
     }
-    
-    return response.blob();
-  },
-  generateInvoice: (clientId: number, startDate: string, endDate: string) => {
-    const params = new URLSearchParams({
-      client_id: clientId.toString(),
-      start_date: startDate,
-      end_date: endDate
-    });
-    return apiRequest<Invoice>(`/facturen/generate?${params.toString()}`, {
-      method: 'GET'
-    });
-  },
-  exportPdf: async () => {
-    const response = await fetch(`${baseURL}/facturen/pdf-export/facturen`, {
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem('token')}`,
-        'Accept': 'application/pdf'
-      }
-    });
-    
-    if (!response.ok) {
-      throw new Error('Failed to export PDF');
-    }
-    
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'facturen_overzicht.pdf';
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
-  }
+  })
 };
 
 // API functions for payroll
@@ -299,17 +282,95 @@ export const dashboardApi = {
 export const locationRatesApi = {
   getAll: () => apiRequest<LocationRate[]>('/location-rates/'),
   getById: (id: number) => apiRequest<LocationRate>(`/location-rates/${id}/`),
-  create: (rate: LocationRateCreate) => apiRequest<LocationRate>('/location-rates/', {
-    method: 'POST',
-    body: JSON.stringify(rate)
-  }),
-  update: (id: number, rate: LocationRateCreate) => apiRequest<LocationRate>(`/location-rates/${id}/`, {
+  create: async (data: LocationRateCreate) => {
+    try {
+      // Log the request data
+      console.log('Creating location rate with data:', JSON.stringify(data, null, 2));
+
+      // Validate the data before sending
+      if (!data.location_id || !data.pass_type) {
+        throw new Error('Location ID and pass type are required');
+      }
+
+      if (data.pass_type !== 'blue' && data.pass_type !== 'grey') {
+        throw new Error('Pass type must be either "blue" or "grey"');
+      }
+
+      // Validate all rates are positive numbers
+      const rates = [
+        data.base_rate,
+        data.evening_rate,
+        data.night_rate,
+        data.weekend_rate,
+        data.holiday_rate,
+        data.new_years_eve_rate
+      ];
+
+      if (rates.some(rate => isNaN(rate) || rate <= 0)) {
+        throw new Error('All rates must be positive numbers');
+      }
+
+      // Use the exact endpoint format from the FastAPI router
+      const response = await fetch(`${API_BASE_URL}/location-rates/`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+        },
+        body: JSON.stringify({
+          ...data,
+          pass_type: data.pass_type.toLowerCase() // Ensure pass type is lowercase
+        })
+      });
+
+      // Try to parse the response as JSON
+      let responseData;
+      try {
+        responseData = await response.json();
+        console.log('Server response data:', JSON.stringify(responseData, null, 2));
+      } catch (e) {
+        console.log('Could not parse response as JSON:', e);
+        responseData = null;
+      }
+
+      // Log the full response details
+      console.log('Server response details:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+        data: responseData
+      });
+
+      if (!response.ok) {
+        // Try to extract a meaningful error message
+        const errorMessage = 
+          responseData?.detail || 
+          responseData?.message || 
+          responseData?.error || 
+          (typeof responseData === 'string' ? responseData : null) ||
+          response.statusText;
+
+        throw new Error(`Failed to create location rate: ${errorMessage || 'Unknown error'}`);
+      }
+
+      return responseData;
+    } catch (error) {
+      console.error('Location rate creation error:', error);
+      // Re-throw the error with more context
+      if (error instanceof Error) {
+        throw new Error(`Location rate creation failed: ${error.message}`);
+      }
+      throw error;
+    }
+  },
+  update: (id: number, data: Partial<LocationRate>) => apiRequest<LocationRate>(`/location-rates/${id}/`, {
     method: 'PUT',
-    body: JSON.stringify(rate)
+    body: JSON.stringify(data)
   }),
   delete: (id: number) => apiRequest<void>(`/location-rates/${id}/`, {
     method: 'DELETE'
-  })
+  }),
+  getByLocation: (locationId: number) => apiRequest<LocationRate[]>(`/location-rates/location/${locationId}/`)
 };
 
 // API functions for opdrachtgevers (clients)
@@ -460,4 +521,65 @@ export const notificationsApi = {
 export const notificationsService = {
   getUnreadCount: () => apiRequest<number>('/notifications/unread-count'),
   // ... rest of the notifications service
+};
+
+export const hourIncreaseApi = {
+  request: async (data: { shift_id: number; requested_end_time: string }) => {
+    try {
+      return await apiRequest<HourIncreaseResponse>('/hour-increase/request', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      });
+    } catch (error) {
+      console.error('Error requesting hour increase:', error);
+      throw error;
+    }
+  },
+
+  getAll: async (): Promise<HourIncreaseRequest[]> => {
+    try {
+      console.log('Fetching all hour increase requests...');
+      const response = await apiRequest<HourIncreaseRequest[]>('/hour-increase/requests');
+      console.log('Hour increase requests response:', response);
+      
+      if (!Array.isArray(response)) {
+        console.error('Invalid response format:', response);
+        return [];
+      }
+      
+      return response;
+    } catch (error) {
+      console.error('Error fetching hour increase requests:', error);
+      if (error instanceof Error) {
+        console.error('Error details:', {
+          message: error.message,
+          name: error.name,
+          stack: error.stack
+        });
+      }
+      throw error;
+    }
+  },
+
+  approve: async (requestId: number) => {
+    try {
+      return await apiRequest<HourIncreaseResponse>(`/hour-increase/${requestId}/approve`, {
+        method: 'POST'
+      });
+    } catch (error) {
+      console.error('Error approving hour increase request:', error);
+      throw error;
+    }
+  },
+
+  reject: async (requestId: number) => {
+    try {
+      return await apiRequest<HourIncreaseResponse>(`/hour-increase/${requestId}/reject`, {
+        method: 'POST'
+      });
+    } catch (error) {
+      console.error('Error rejecting hour increase request:', error);
+      throw error;
+    }
+  },
 };

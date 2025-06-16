@@ -1,6 +1,6 @@
-import React from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { dashboardApi, shiftsApi, serviceRequestsApi, payrollApi, employeesApi } from '@/lib/api';
+import React, { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { dashboardApi, shiftsApi, serviceRequestsApi, payrollApi, employeesApi, hourIncreaseApi } from '@/lib/api';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { 
   BarChart3, 
@@ -11,7 +11,8 @@ import {
   ArrowUp,
   ArrowDown,
   Plus,
-  Download
+  Download,
+  Clock
 } from 'lucide-react';
 import { StatusBadge } from '@/components/ui/StatusBadge';
 import { useAuth } from '@/lib/AuthContext';
@@ -19,6 +20,8 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Bell, FileText, Settings } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { HourIncreaseRequestModal } from '@/components/HourIncreaseRequestModal';
+import { toast } from '@/components/ui/use-toast';
 
 interface DashboardStats {
   total_shifts: number;
@@ -74,7 +77,28 @@ interface PayrollEntry {
   periode_end?: string;
 }
 
-export default function Dashboard() {
+interface HourIncreaseRequest {
+  id: number;
+  shift_id: number;
+  employee_id: string;
+  requested_end_time: string;
+  original_end_time: string;
+  status: 'pending' | 'approved' | 'rejected';
+  request_date: string;
+  response_date?: string;
+  notes?: string;
+}
+
+interface Shift {
+  id: number;
+  shift_date: string;
+  start_time: string;
+  end_time: string;
+  location: string;
+  employee_id: string;
+}
+
+const Dashboard = () => {
   const { user } = useAuth();
 
   console.log('User object:', user);
@@ -109,7 +133,9 @@ export default function Dashboard() {
       )}
     </div>
   );
-}
+};
+
+export default Dashboard;
 
 interface StatsCardProps {
   title: string;
@@ -159,6 +185,8 @@ function StatsCard({ title, value, icon, trend, isLoading }: StatsCardProps) {
 }
 
 const AdminDashboard = () => {
+  const queryClient = useQueryClient();
+
   // Query for dashboard statistics
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ['dashboard-stats'],
@@ -175,6 +203,12 @@ const AdminDashboard = () => {
   const { data: serviceRequests, isLoading: requestsLoading } = useQuery({
     queryKey: ['service-requests'],
     queryFn: serviceRequestsApi.getAll,
+  });
+
+  // Query for hour increase requests
+  const { data: hourIncreaseRequests, isLoading: hourIncreaseLoading } = useQuery({
+    queryKey: ['hour-increase-requests'],
+    queryFn: hourIncreaseApi.getAll,
   });
 
   // Get upcoming shifts (next 5 days)
@@ -197,6 +231,29 @@ const AdminDashboard = () => {
     total_factuur_amount: 0,
     timestamp: new Date().toISOString()
   };
+
+  // Mutations for approving/rejecting requests
+  const { mutate: approveRequest } = useMutation({
+    mutationFn: hourIncreaseApi.approve,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hour-increase-requests'] });
+      toast({
+        title: 'Success',
+        description: 'Hour increase request approved',
+      });
+    },
+  });
+
+  const { mutate: rejectRequest } = useMutation({
+    mutationFn: hourIncreaseApi.reject,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['hour-increase-requests'] });
+      toast({
+        title: 'Success',
+        description: 'Hour increase request rejected',
+      });
+    },
+  });
 
   return (
     <div className="space-y-6">
@@ -319,12 +376,58 @@ const AdminDashboard = () => {
             </div>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Hour Increase Requests</CardTitle>
+            <CardDescription>Pending requests for shift hour increases</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {Array.isArray(hourIncreaseRequests) && hourIncreaseRequests
+                .filter((req: HourIncreaseRequest) => req.status === 'pending')
+                .map((request: HourIncreaseRequest) => (
+                  <div key={request.id} className="flex items-start justify-between space-x-4 p-4 border rounded-lg">
+                    <div>
+                      <p className="text-sm font-medium">Employee: {request.employee_id}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Requested end time: {request.requested_end_time}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Original end time: {request.original_end_time}
+                      </p>
+                    </div>
+                    <div className="flex space-x-2">
+                      <Button
+                        size="sm"
+                        onClick={() => approveRequest(request.id)}
+                      >
+                        Approve
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => rejectRequest(request.id)}
+                      >
+                        Reject
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              {(!Array.isArray(hourIncreaseRequests) || hourIncreaseRequests.filter((req: HourIncreaseRequest) => req.status === 'pending').length === 0) && (
+                <p className="text-sm text-muted-foreground">No pending hour increase requests</p>
+              )}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
 };
 
 const PlannerDashboard = () => {
+  const queryClient = useQueryClient();
+
   // Query for dashboard statistics
   const { data: stats, isLoading: statsLoading } = useQuery<DashboardStats>({
     queryKey: ['dashboard-stats'],
@@ -341,6 +444,12 @@ const PlannerDashboard = () => {
   const { data: serviceRequests, isLoading: requestsLoading } = useQuery({
     queryKey: ['service-requests'],
     queryFn: serviceRequestsApi.getAll,
+  });
+
+  // Query for hour increase requests
+  const { data: hourIncreaseRequests, isLoading: hourIncreaseLoading } = useQuery({
+    queryKey: ['hour-increase-requests'],
+    queryFn: hourIncreaseApi.getAll,
   });
 
   // Get upcoming shifts (next 5 days)
@@ -485,6 +594,30 @@ const PlannerDashboard = () => {
             </div>
           </CardContent>
         </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Hour Increase Requests</CardTitle>
+            <CardDescription>Pending requests for shift hour increases</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {Array.isArray(hourIncreaseRequests) && hourIncreaseRequests
+                .filter((req: HourIncreaseRequest) => req.status === 'pending')
+                .map((request: HourIncreaseRequest) => (
+                  <div key={request.id} className="flex items-start space-x-4">
+                    <Clock className="h-4 w-4 text-muted-foreground mt-1" />
+                    <div>
+                      <p className="text-sm font-medium">Hour increase request {request.status}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Requested end time: {request.requested_end_time}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   );
@@ -492,6 +625,8 @@ const PlannerDashboard = () => {
 
 const EmployeeDashboard = () => {
   const { user } = useAuth();
+  const [showHourIncreaseModal, setShowHourIncreaseModal] = useState(false);
+  const queryClient = useQueryClient();
 
   // Query for employee profile
   const { data: profile, isLoading: profileLoading } = useQuery({
@@ -503,7 +638,7 @@ const EmployeeDashboard = () => {
   const { data: shifts, isLoading: shiftsLoading } = useQuery({
     queryKey: ['my-shifts'],
     queryFn: () => shiftsApi.getAll().then(shifts => 
-      Array.isArray(shifts) ? shifts.filter(shift => shift.employee_id === user?.id) : []
+      Array.isArray(shifts) ? shifts.filter(shift => shift.employee_id === user?.username) : []
     ),
   });
 
@@ -517,6 +652,12 @@ const EmployeeDashboard = () => {
   const { data: payroll, isLoading: payrollLoading } = useQuery({
     queryKey: ['my-payroll'],
     queryFn: () => payrollApi.getMyPayroll(new Date().getFullYear()),
+  });
+
+  // Query for hour increase requests
+  const { data: hourIncreaseRequests, isLoading: hourIncreaseLoading } = useQuery({
+    queryKey: ['hour-increase-requests'],
+    queryFn: hourIncreaseApi.getAll,
   });
 
   // Get upcoming shifts (next 5 days)
@@ -579,12 +720,14 @@ const EmployeeDashboard = () => {
                   View My Shifts
                 </Button>
               </Link>
-              <Link to="/service-requests/new">
-                <Button variant="outline" className="w-full justify-start">
-                  <Plus className="mr-2 h-4 w-4" />
-                  New Service Request
-                </Button>
-              </Link>
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => setShowHourIncreaseModal(true)}
+              >
+                <Clock className="mr-2 h-4 w-4" />
+                Request Hour Increase
+              </Button>
               <Link to="/my-profile">
                 <Button variant="outline" className="w-full justify-start">
                   <Users className="mr-2 h-4 w-4" />
@@ -633,24 +776,32 @@ const EmployeeDashboard = () => {
                   </div>
                 </div>
               ))}
-              {pendingRequests.map((request, i) => (
-                <div key={i} className="flex items-start space-x-4">
-                  <ClipboardList className="h-4 w-4 text-muted-foreground mt-1" />
-                  <div>
-                    <p className="text-sm font-medium">Service request {request.status}</p>
-                    <p className="text-xs text-muted-foreground">
-                      For shift on {new Date(request.shift_date).toLocaleDateString()}
-                    </p>
+              {Array.isArray(hourIncreaseRequests) && hourIncreaseRequests
+                .filter((req: HourIncreaseRequest) => req.status === 'pending')
+                .map((request: HourIncreaseRequest) => (
+                  <div key={request.id} className="flex items-start space-x-4">
+                    <Clock className="h-4 w-4 text-muted-foreground mt-1" />
+                    <div>
+                      <p className="text-sm font-medium">Hour increase request {request.status}</p>
+                      <p className="text-xs text-muted-foreground">
+                        Requested end time: {request.requested_end_time}
+                      </p>
+                    </div>
                   </div>
-                </div>
-              ))}
-              {upcomingShifts.length === 0 && pendingRequests.length === 0 && (
+                ))}
+              {upcomingShifts.length === 0 && (!Array.isArray(hourIncreaseRequests) || hourIncreaseRequests.length === 0) && (
                 <p className="text-sm text-muted-foreground">No recent activity</p>
               )}
             </div>
           </CardContent>
         </Card>
       </div>
+
+      <HourIncreaseRequestModal
+        isOpen={showHourIncreaseModal}
+        onClose={() => setShowHourIncreaseModal(false)}
+        shifts={upcomingShifts}
+      />
     </div>
   );
 };

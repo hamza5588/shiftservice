@@ -63,64 +63,55 @@ export default function UsersManagement() {
     e.preventDefault();
     
     // Basic validation
-    if (!newUser.username || !newUser.email || !newUser.full_name || !newUser.password || !newUser.role) {
+    if (!newUser.username || !newUser.email || !newUser.password || !newUser.full_name || !newUser.role) {
       toast({
         title: "Error",
-        description: "Please fill in all fields",
+        description: "Please fill in all required fields",
         variant: "destructive",
       });
       return;
     }
 
     try {
-      console.log('Attempting to create user with data:', { ...newUser, password: '[REDACTED]' });
+      console.log('Attempting to create user with data:', {
+        ...newUser,
+        password: '[REDACTED]'
+      });
+
       const response = await usersApi.create(newUser);
       console.log('User creation response:', response);
-      setIsCreateDialogOpen(false);
-      fetchUsers();
+
+      // Show success message based on role
+      const roleMessage = newUser.role === 'employee' 
+        ? 'Employee account created successfully. They can now log in with their credentials.'
+        : 'User account created successfully.';
+      
+      toast({
+        title: "Success",
+        description: roleMessage,
+      });
+
+      // Reset form
       setNewUser({
         username: '',
         email: '',
-        full_name: '',
         password: '',
+        full_name: '',
         role: 'employee'
       });
-      
-      // Show different success messages based on role
-      if (newUser.role === 'employee') {
-        toast({
-          title: "Success",
-          description: "User account and employee profile created successfully. The employee can now log in and access their profile.",
-        });
-      } else {
-        toast({
-          title: "Success",
-          description: "User created successfully.",
-        });
-      }
+
+      // Close dialog and refresh user list
+      setIsCreateDialogOpen(false);
+      fetchUsers();
     } catch (error: any) {
       console.error('Error creating user:', error);
-      console.error('Error details:', {
-        message: error.message,
-        stack: error.stack,
-        response: error.response,
-        data: error.data
-      });
       
-      let errorMessage = "Failed to create user. Please try again later.";
+      // Get the error message from the error object
+      let errorMessage = error.message || 'An unexpected error occurred';
       
-      // Check for specific error messages from the backend
-      if (error.data?.detail) {
-        errorMessage = error.data.detail;
-      } else if (error.message?.includes("Email address already registered") || 
-                 error.message?.includes("Email already exists")) {
-        errorMessage = "This email address is already registered. Please use a different email.";
-      } else if (error.message?.includes("Username already registered")) {
-        errorMessage = "This username is already taken. Please choose a different username.";
-      } else if (error.message?.includes("Only admin users can create new users")) {
-        errorMessage = "You don't have permission to create users. Only administrators can create new users.";
-      } else if (error.message?.includes("Role not found")) {
-        errorMessage = "The selected role is invalid. Please try again.";
+      // If the error has responseData, try to get a more specific message
+      if (error.responseData?.detail) {
+        errorMessage = error.responseData.detail;
       }
       
       toast({
@@ -132,19 +123,27 @@ export default function UsersManagement() {
   };
 
   const handleDeleteUser = async (userId: number) => {
-    if (window.confirm('Are you sure you want to delete this user?')) {
+    if (window.confirm('Are you sure you want to delete this user? This will also delete their employee profile if it exists.')) {
       try {
         await usersApi.delete(userId.toString());
         fetchUsers();
         toast({
           title: "Success",
-          description: "User deleted successfully.",
+          description: "User and associated employee profile deleted successfully.",
         });
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error deleting user:', error);
+        let errorMessage = "Failed to delete user. Please try again later.";
+        
+        if (error.data?.detail) {
+          errorMessage = error.data.detail;
+        } else if (error.message?.includes("IntegrityError")) {
+          errorMessage = "Cannot delete user because they have associated records. Please contact support.";
+        }
+        
         toast({
           title: "Error",
-          description: "Failed to delete user. Please try again later.",
+          description: errorMessage,
           variant: "destructive",
         });
       }

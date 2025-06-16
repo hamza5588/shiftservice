@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Eye } from 'lucide-react';
+import { useMutation } from 'react-query';
+import { toast } from '@/components/ui/use-toast';
 
 export default function Invoicing() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -11,6 +13,36 @@ export default function Invoicing() {
 
   // Remove the viewedInvoice memo since we'll use selectedInvoice directly
   const viewedInvoice = selectedInvoice;
+
+  const filteredInvoices = invoices?.filter(invoice => {
+    return searchQuery === '' || 
+      invoice.opdrachtgever_naam?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      invoice.factuurnummer?.toLowerCase().includes(searchQuery.toLowerCase());
+  }) || [];
+
+  const sendInvoiceMutation = useMutation({
+    mutationFn: async (invoice: Invoice) => {
+      if (!invoice.id) {
+        throw new Error('Invalid invoice ID');
+      }
+      return invoicesApi.send(invoice.id);
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Success',
+        description: 'Invoice sent successfully',
+      });
+      refetch();
+    },
+    onError: (error) => {
+      console.error('Send error:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to send invoice',
+        variant: 'destructive',
+      });
+    },
+  });
 
   <Dialog open={viewInvoiceId !== null} onOpenChange={(open) => {
     if (!open) {

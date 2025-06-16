@@ -21,9 +21,12 @@ class User(Base):
     email = Column(String(100), unique=True, index=True)
     hashed_password = Column(String(100))
     full_name = Column(String(100))
+    reset_token = Column(String(100), nullable=True)
+    reset_token_expiry = Column(DateTime, nullable=True)
     roles = relationship("Role", secondary=user_roles, back_populates="users")
     shifts = relationship("Shift", back_populates="medewerker")
     medewerker_profile = relationship("Medewerker", back_populates="user")
+    hour_increase_requests = relationship("ShiftHourIncreaseRequest", back_populates="employee")
 
     def __repr__(self):
         return f"<User {self.username}>"
@@ -123,6 +126,7 @@ class Opdrachtgever(Base):
     stad = Column(String(100))
     telefoon = Column(String(20))
     email = Column(String(100), unique=True, index=True)
+    status = Column(String(50), default='active')  # Add status field with default value
     diensten = relationship("Dienstaanvraag", back_populates="opdrachtgever")
     facturen = relationship("Factuur", back_populates="opdrachtgever")
     tarieven = relationship("Tarief", back_populates="opdrachtgever")
@@ -161,6 +165,7 @@ class Shift(Base):
     required_profile = Column(String(100), nullable=True)
     factuur_id = Column(Integer, ForeignKey("facturen.id"), nullable=True)
     reiskilometers = Column(Float, nullable=True)  # Add reiskilometers field
+    hour_increase_requests = relationship("ShiftHourIncreaseRequest", back_populates="shift")
 
     medewerker = relationship("User", back_populates="shifts")
     dienstaanvragen = relationship("Dienstaanvraag", back_populates="shift")
@@ -183,6 +188,8 @@ class Factuur(Base):
     shift_date = Column(Date)  # Start date of the shift period
     shift_date_end = Column(Date)  # End date of the shift period
     bedrag = Column(Float)
+    subtotal = Column(Float)  # Added subtotal field
+    vat_amount = Column(Float)  # Added VAT amount field
     status = Column(String(50))  # "open", "betaald", "herinnering14", "herinnering30"
     factuur_text = Column(Text, nullable=True)
     # Client information
@@ -192,11 +199,19 @@ class Factuur(Base):
     stad = Column(String(100), nullable=True)
     telefoon = Column(String(20), nullable=True)
     email = Column(String(100), nullable=True)
+    # New fields
+    client_name = Column(String(100), nullable=True)
+    issue_date = Column(Date, nullable=True)
+    due_date = Column(Date, nullable=True)
+    total_amount = Column(Float, nullable=True)
+    breakdown = Column(JSON, nullable=True)  # Store the breakdown of hours and rates
     
-    # Relationships
+    # Relationships with cascade delete
     opdrachtgever = relationship("Opdrachtgever", back_populates="facturen")
 
     def __init__(self, **kwargs):
+        # Remove any non-database fields before initialization
+        kwargs.pop('model_config', None)
         super().__init__(**kwargs)
         if self.factuurnummer:
             self.year_client = self.factuurnummer[:7]  # Extract YYYYCCC part
@@ -359,3 +374,26 @@ class ChatMessage(Base):
     sender = relationship("User", foreign_keys=[sender_id], backref="sent_messages")
     receiver = relationship("User", foreign_keys=[receiver_id], backref="received_messages")
     shift = relationship("Shift", backref="chat_messages") 
+
+class ShiftHourIncreaseRequest(Base):
+    __tablename__ = "shift_hour_increase_requests"
+
+    id = Column(Integer, primary_key=True, index=True)
+    shift_id = Column(Integer, ForeignKey("shifts.id"), nullable=False)
+    employee_id = Column(String(50), ForeignKey("users.username"), nullable=False)
+    requested_end_time = Column(String(5), nullable=False)  # New end time requested
+    original_end_time = Column(String(5), nullable=False)  # Original end time
+    status = Column(String(50), nullable=False, default="pending")  # pending, approved, rejected
+    request_date = Column(DateTime, default=datetime.utcnow)
+    response_date = Column(DateTime, nullable=True)
+    notes = Column(Text, nullable=True)
+    
+    # Relationships
+    shift = relationship("Shift", back_populates="hour_increase_requests")
+    employee = relationship("User", back_populates="hour_increase_requests")
+
+# Add relationship to Shift model
+Shift.hour_increase_requests = relationship("ShiftHourIncreaseRequest", back_populates="shift")
+
+# Add relationship to User model
+User.hour_increase_requests = relationship("ShiftHourIncreaseRequest", back_populates="employee") 

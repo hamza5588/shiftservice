@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 from typing import List, Optional
 from datetime import date, datetime
 import os
@@ -12,13 +12,40 @@ from reportlab.platypus import Table, TableStyle
 from auth import require_roles, get_current_user
 from io import BytesIO
 from sqlalchemy.orm import Session, joinedload
+from email_config import EMAIL_CONFIG, send_invoice_email
 from database import get_db
-from models import Factuur, Opdrachtgever
+from models import Factuur, Opdrachtgever, Shift
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet
 import logging
+import sys
+from sqlalchemy import and_, or_
 
+# Create logs directory if it doesn't exist
+log_dir = os.path.join(os.path.dirname(__file__), 'logs')
+os.makedirs(log_dir, exist_ok=True)
+
+# Configure logging with both file and console handlers
 logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
+
+# Create file handler for invoice logs
+invoice_log_file = os.path.join(log_dir, 'invoice.log')
+file_handler = logging.FileHandler(invoice_log_file)
+file_handler.setLevel(logging.DEBUG)
+
+# Create console handler
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel(logging.INFO)
+
+# Create formatters and add them to handlers
+log_format = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(log_format)
+console_handler.setFormatter(log_format)
+
+# Add handlers to logger
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 # Create router for facturen
 router = APIRouter(
@@ -33,16 +60,18 @@ if not os.path.exists(UPLOAD_FOLDER):
     os.makedirs(UPLOAD_FOLDER)
 
 class FactuurBase(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    
     id: Optional[int] = None
     opdrachtgever_id: int
-    opdrachtgever_naam: str
+    opdrachtgever_naam: Optional[str] = None
     factuurnummer: Optional[str] = None
-    locatie: str
-    factuurdatum: date
-    shift_date: date
-    shift_date_end: date
-    bedrag: float
-    status: str = "open"
+    locatie: Optional[str] = None
+    factuurdatum: Optional[date] = None
+    shift_date: Optional[date] = None
+    shift_date_end: Optional[date] = None
+    bedrag: Optional[float] = None
+    status: Optional[str] = "open"
     factuur_text: Optional[str] = None
     kvk_nummer: Optional[str] = None
     adres: Optional[str] = None
@@ -50,11 +79,15 @@ class FactuurBase(BaseModel):
     stad: Optional[str] = None
     telefoon: Optional[str] = None
     email: Optional[str] = None
+    client_name: Optional[str] = None
+    issue_date: Optional[date] = None
+    due_date: Optional[date] = None
+    total_amount: Optional[float] = None
+    vat_amount: Optional[float] = None
+    subtotal: Optional[float] = None
+    breakdown: Optional[dict] = None
 
-    class Config:
-        orm_mode = True
-
-@router.get("/", response_model=List[FactuurBase])
+@router.get("/")
 async def get_facturen(
     current_user: dict = Depends(require_roles(["boekhouding", "admin", "planner"])),
     db: Session = Depends(get_db)
@@ -64,7 +97,32 @@ async def get_facturen(
         logger.info("Fetching all invoices")
         facturen = db.query(Factuur).all()
         logger.info(f"Successfully fetched {len(facturen)} invoices")
-        return facturen
+        
+        # Transform the data into a list of dictionaries
+        facturen_list = []
+        for factuur in facturen:
+            factuur_dict = {
+                "id": factuur.id,
+                "opdrachtgever_id": factuur.opdrachtgever_id,
+                "opdrachtgever_naam": factuur.opdrachtgever_naam or "",
+                "factuurnummer": factuur.factuurnummer or "",
+                "locatie": factuur.locatie or "",
+                "factuurdatum": factuur.factuurdatum or date.today(),
+                "shift_date": factuur.shift_date or date.today(),
+                "shift_date_end": factuur.shift_date_end or date.today(),
+                "bedrag": factuur.bedrag or 0.0,
+                "status": factuur.status or "open",
+                "factuur_text": factuur.factuur_text or "",
+                "kvk_nummer": factuur.kvk_nummer or "",
+                "adres": factuur.adres or "",
+                "postcode": factuur.postcode or "",
+                "stad": factuur.stad or "",
+                "telefoon": factuur.telefoon or "",
+                "email": factuur.email or ""
+            }
+            facturen_list.append(factuur_dict)
+        
+        return facturen_list
     except Exception as e:
         logger.error(f"Error fetching invoices: {str(e)}", exc_info=True)
         raise HTTPException(
@@ -72,25 +130,56 @@ async def get_facturen(
             detail=f"Error fetching invoices: {str(e)}"
         )
 
-@router.get("/{factuur_id}", response_model=FactuurBase)
+@router.get("/{invoice_id}")
 async def get_factuur(
-    factuur_id: int,
+    invoice_id: int,
     current_user: dict = Depends(require_roles(["boekhouding", "admin", "planner"])),
     db: Session = Depends(get_db)
 ):
     """Get a specific invoice by ID."""
     try:
-        logger.info(f"Fetching invoice with ID: {factuur_id}")
-        factuur = db.query(Factuur).filter(Factuur.id == factuur_id).first()
+        logger.info(f"Fetching invoice with ID: {invoice_id}")
+        factuur = db.query(Factuur).filter(Factuur.id == invoice_id).first()
+        
         if not factuur:
-            logger.warning(f"Invoice not found with ID: {factuur_id}")
-            raise HTTPException(status_code=404, detail="Factuur niet gevonden")
-        return factuur
+            logger.warning(f"Invoice not found with ID: {invoice_id}")
+            raise HTTPException(
+                status_code=404,
+                detail=f"Invoice not found with ID: {invoice_id}"
+            )
+        
+        logger.info(f"Successfully fetched invoice with ID: {invoice_id}")
+        
+        # Transform the data into a dictionary
+        factuur_dict = {
+            "id": factuur.id,
+            "opdrachtgever_id": factuur.opdrachtgever_id,
+            "opdrachtgever_naam": factuur.opdrachtgever_naam or "",
+            "factuurnummer": factuur.factuurnummer or "",
+            "locatie": factuur.locatie or "",
+            "factuurdatum": factuur.factuurdatum or date.today(),
+            "shift_date": factuur.shift_date or date.today(),
+            "shift_date_end": factuur.shift_date_end or date.today(),
+            "bedrag": factuur.bedrag or 0.0,
+            "status": factuur.status or "open",
+            "factuur_text": factuur.factuur_text or "",
+            "kvk_nummer": factuur.kvk_nummer or "",
+            "adres": factuur.adres or "",
+            "postcode": factuur.postcode or "",
+            "stad": factuur.stad or "",
+            "telefoon": factuur.telefoon or "",
+            "email": factuur.email or ""
+        }
+        
+        return factuur_dict
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error fetching invoice {factuur_id}: {str(e)}")
-        raise HTTPException(status_code=500, detail="Error fetching invoice")
+        logger.error(f"Error fetching invoice with ID {invoice_id}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error fetching invoice: {str(e)}"
+        )
 
 @router.post("/", response_model=FactuurBase, status_code=201)
 async def create_factuur(
@@ -101,6 +190,7 @@ async def create_factuur(
     """Create a new invoice."""
     try:
         logger.info("Creating new invoice")
+        logger.info(f"Received invoice data: {factuur.dict()}")
         
         # Validate required fields
         if not factuur.opdrachtgever_id:
@@ -111,59 +201,80 @@ async def create_factuur(
             raise HTTPException(status_code=400, detail="Locatie is required")
         if not factuur.factuurdatum:
             raise HTTPException(status_code=400, detail="Factuurdatum is required")
-        if not factuur.bedrag or factuur.bedrag <= 0:
-            raise HTTPException(status_code=400, detail="Bedrag moet groter zijn dan 0")
-        
-        # Fetch client information from Opdrachtgever table
+        if not factuur.bedrag:
+            raise HTTPException(status_code=400, detail="Bedrag is required")
+        if not factuur.shift_date:
+            raise HTTPException(status_code=400, detail="Shift date is required")
+        if not factuur.shift_date_end:
+            raise HTTPException(status_code=400, detail="Shift date end is required")
+        if not factuur.subtotal:
+            raise HTTPException(status_code=400, detail="Subtotal is required")
+        if not factuur.vat_amount:
+            raise HTTPException(status_code=400, detail="VAT amount is required")
+        if not factuur.total_amount:
+            raise HTTPException(status_code=400, detail="Total amount is required")
+        if not factuur.breakdown:
+            raise HTTPException(status_code=400, detail="Breakdown is required")
+        if not factuur.issue_date:
+            raise HTTPException(status_code=400, detail="Issue date is required")
+        if not factuur.due_date:
+            raise HTTPException(status_code=400, detail="Due date is required")
+
+        # Get client information
         client = db.query(Opdrachtgever).filter(Opdrachtgever.id == factuur.opdrachtgever_id).first()
         if not client:
-            raise HTTPException(status_code=404, detail="Opdrachtgever not found")
-        
-        # Generate invoice number
-        factuur_dict = factuur.dict()
-        factuur_dict["factuurnummer"] = generate_invoice_number(
-            factuur_dict["opdrachtgever_id"],
-            factuur_dict["opdrachtgever_naam"],
-            db
-        )
-        
-        # Update invoice with client information
-        factuur_dict.update({
-            "kvk_nummer": client.kvk_nummer,
-            "adres": client.adres,
-            "postcode": client.postcode,
-            "stad": client.stad,
-            "telefoon": client.telefoon,
-            "email": client.email
-        })
-        
-        # Add client information to factuur_text
-        client_info = f"""
-FACTUUR AAN:
-{client.bedrijfsnaam or client.naam}
-KVK: {client.kvk_nummer}
-{client.adres}
-{client.postcode} {client.stad}
-Tel: {client.telefoon}
-Email: {client.email}
+            raise HTTPException(status_code=404, detail="Client not found")
 
-{factuur_dict.get("factuur_text", "")}
-"""
-        factuur_dict["factuur_text"] = client_info
-        
+        # Generate invoice number
+        try:
+            factuurnummer = generate_invoice_number(factuur.opdrachtgever_id, factuur.opdrachtgever_naam, db)
+        except Exception as e:
+            logger.error(f"Error generating invoice number: {str(e)}")
+            raise HTTPException(status_code=500, detail="Error generating invoice number")
+
         # Create new invoice
-        db_factuur = Factuur(**factuur_dict)
-        db.add(db_factuur)
-        db.commit()
-        db.refresh(db_factuur)
-        
-        logger.info(f"Successfully created invoice with ID: {db_factuur.id}")
-        return db_factuur
+        new_factuur = Factuur(
+            opdrachtgever_id=factuur.opdrachtgever_id,
+            opdrachtgever_naam=factuur.opdrachtgever_naam,
+            factuurnummer=factuurnummer,
+            locatie=factuur.locatie,
+            factuurdatum=factuur.factuurdatum,
+            shift_date=factuur.shift_date,
+            shift_date_end=factuur.shift_date_end,
+            bedrag=factuur.bedrag,
+            status=factuur.status or "open",
+            factuur_text=factuur.factuur_text,
+            kvk_nummer=factuur.kvk_nummer,
+            adres=factuur.adres,
+            postcode=factuur.postcode,
+            stad=factuur.stad,
+            telefoon=factuur.telefoon,
+            email=factuur.email,
+            client_name=factuur.client_name,
+            issue_date=factuur.issue_date,
+            due_date=factuur.due_date,
+            total_amount=factuur.total_amount,
+            vat_amount=factuur.vat_amount,
+            subtotal=factuur.subtotal,
+            breakdown=factuur.breakdown
+        )
+
+        # Add to database
+        try:
+            db.add(new_factuur)
+            db.commit()
+            db.refresh(new_factuur)
+            logger.info(f"Successfully created invoice with ID: {new_factuur.id}")
+            return new_factuur
+        except Exception as e:
+            db.rollback()
+            logger.error(f"Database error creating invoice: {str(e)}")
+            raise HTTPException(status_code=500, detail="Database error creating invoice")
+
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating invoice: {str(e)}")
-        db.rollback()
+        logger.error(f"Error creating invoice: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Error creating invoice: {str(e)}")
 
 @router.put("/{factuur_id}", response_model=FactuurBase)
@@ -196,10 +307,10 @@ async def update_factuur(
         db.rollback()
         raise HTTPException(status_code=500, detail="Error updating invoice")
 
-@router.delete("/{factuur_id}", response_model=FactuurBase)
+@router.delete("/{factuur_id}")
 async def delete_factuur(
     factuur_id: int,
-    current_user: dict = Depends(require_roles(["boekhouding", "admin"])),
+    current_user: dict = Depends(require_roles(["admin", "boekhouding"])),
     db: Session = Depends(get_db)
 ):
     """Delete an invoice."""
@@ -210,17 +321,24 @@ async def delete_factuur(
             logger.warning(f"Invoice not found with ID: {factuur_id}")
             raise HTTPException(status_code=404, detail="Factuur niet gevonden")
         
+        # Store the factuurnummer before deleting
+        factuurnummer = db_factuur.factuurnummer
+        
+        # Update any associated shifts to remove the factuur_id reference
+        db.query(Shift).filter(Shift.factuur_id == factuur_id).update({Shift.factuur_id: None})
+        
+        # Now delete the invoice
         db.delete(db_factuur)
         db.commit()
         
         logger.info(f"Successfully deleted invoice with ID: {factuur_id}")
-        return db_factuur
+        return {"message": f"Invoice {factuurnummer} deleted successfully"}
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error deleting invoice {factuur_id}: {str(e)}")
         db.rollback()
-        raise HTTPException(status_code=500, detail="Error deleting invoice")
+        raise HTTPException(status_code=500, detail=f"Error deleting invoice: {str(e)}")
 
 def generate_invoice_number(opdrachtgever_id: int, opdrachtgever_naam: str, db: Session) -> str:
     """Generate a unique invoice number in the format [YEAR][CLIENT NUMBER][INVOICE COUNT]-[CLIENT DIGIT]."""
@@ -398,129 +516,157 @@ async def download_factuur(
         raise HTTPException(status_code=500, detail=str(e))
 
 def generate_pdf(factuur: FactuurBase) -> bytes:
-    buffer = BytesIO()
-    p = canvas.Canvas(buffer)
-    
-    # Set up the page
-    p.setPageSize((595, 842))  # A4 size in points
-    width, height = 595, 842
-    
-    # Add invoice information
-    p.setFont("Helvetica-Bold", 14)
-    p.drawString(50, height - 50, "FACTUUR")
-    p.setFont("Helvetica", 10)
-    p.drawString(50, height - 70, "DATUM")
-    p.drawString(50, height - 90, factuur.factuurdatum.strftime("%d-%m-%Y"))
-    p.drawString(50, height - 110, "")
-    p.drawString(50, height - 130, "FACTUURNUMMER")
-    p.drawString(50, height - 150, factuur.factuurnummer)
-    p.drawString(50, height - 170, "")
-    
-    # Add company information from configuration
-    company_info = {
-        "name": "Secufy Security Services",
-        "kvk": "94486786",
-        "address": "Soetendalseweg 32c",
-        "postcode": "3036ER",
-        "city": "Rotterdam",
-        "phone": "0685455793",
-        "email": "vraagje@secufy.nl",
-        "bank": "NL11 ABNA 0137 7274"
-    }
-    
-    # Add company information
-    p.setFont("Helvetica-Bold", 12)
-    p.drawString(50, height - 190, company_info["name"])
-    p.setFont("Helvetica", 10)
-    p.drawString(50, height - 210, f"KVK: {company_info['kvk']}")
-    p.drawString(50, height - 230, company_info["address"])
-    p.drawString(50, height - 250, f"{company_info['postcode']} {company_info['city']}")
-    p.drawString(50, height - 270, f"Tel: {company_info['phone']}")
-    p.drawString(50, height - 290, f"Email: {company_info['email']}")
-    p.drawString(50, height - 310, "")
-    
-    # Add client information
-    p.setFont("Helvetica-Bold", 12)
-    p.drawString(50, height - 330, "FACTUUR AAN:")
-    p.setFont("Helvetica", 10)
-    p.drawString(50, height - 350, factuur.opdrachtgever_naam)
-    p.drawString(50, height - 370, f"KVK: {factuur.kvk_nummer}")
-    p.drawString(50, height - 390, factuur.adres)
-    p.drawString(50, height - 410, f"{factuur.postcode} {factuur.stad}")
-    p.drawString(50, height - 430, f"Tel: {factuur.telefoon}")
-    p.drawString(50, height - 450, f"Email: {factuur.email}")
-    p.drawString(50, height - 470, "")
-    
-    # Add table headers
-    p.setFont("Helvetica-Bold", 10)
-    p.drawString(50, height - 490, "UREN")
-    p.drawString(150, height - 490, "LOCATIE")
-    p.drawString(300, height - 490, "TARIEF")
-    p.drawString(400, height - 490, "DATUM")
-    p.drawString(500, height - 490, "TOTAAL")
-    
-    # Add table content
-    p.setFont("Helvetica", 10)
-    # Parse the factuur_text to get shift details
-    lines = factuur.factuur_text.split('\n')
-    y = height - 510
-    total_amount = 0
-    
-    # Skip the client information part
-    shift_lines = [line for line in lines if line.strip() and not any(x in line for x in ["FACTUUR AAN:", "KVK:", "Tel:", "Email:"])]
-    
-    for line in shift_lines:
-        if line.strip():
-            # Format: "1.0 islamabad € 24.00 18-04-2025 € 24.80"
-            parts = line.split()
-            if len(parts) >= 5:
-                hours = parts[0]
-                location = parts[1]
-                rate = parts[2] + " " + parts[3]
-                date = parts[4]
-                total = parts[5] + " " + parts[6]
-                
-                p.drawString(50, y, hours)
-                p.drawString(150, y, location)
-                p.drawString(300, y, rate)
-                p.drawString(400, y, date)
-                p.drawString(500, y, total)
-                
+    try:
+        buffer = BytesIO()
+        p = canvas.Canvas(buffer)
+        
+        # Set up the page
+        p.setPageSize((595, 842))  # A4 size in points
+        width, height = 595, 842
+        
+        # Add invoice information
+        p.setFont("Helvetica-Bold", 14)
+        p.drawString(50, height - 50, "FACTUUR")
+        p.setFont("Helvetica", 10)
+        p.drawString(50, height - 70, "DATUM")
+        p.drawString(50, height - 90, factuur.factuurdatum.strftime("%d-%m-%Y") if factuur.factuurdatum else "N/A")
+        p.drawString(50, height - 110, "")
+        p.drawString(50, height - 130, "FACTUURNUMMER")
+        p.drawString(50, height - 150, factuur.factuurnummer or "N/A")
+        p.drawString(50, height - 170, "")
+        
+        # Add company information from configuration
+        company_info = {
+            "name": "Secufy Security Services",
+            "kvk": "94486786",
+            "address": "Soetendalseweg 32c",
+            "postcode": "3036ER",
+            "city": "Rotterdam",
+            "phone": "0685455793",
+            "email": "vraagje@secufy.nl",
+            "bank": "NL11 ABNA 0137 7274"
+        }
+        
+        # Add company information
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(50, height - 190, company_info["name"])
+        p.setFont("Helvetica", 10)
+        p.drawString(50, height - 210, f"KVK: {company_info['kvk']}")
+        p.drawString(50, height - 230, company_info["address"])
+        p.drawString(50, height - 250, f"{company_info['postcode']} {company_info['city']}")
+        p.drawString(50, height - 270, f"Tel: {company_info['phone']}")
+        p.drawString(50, height - 290, f"Email: {company_info['email']}")
+        p.drawString(50, height - 310, "")
+        
+        # Add client information
+        p.setFont("Helvetica-Bold", 12)
+        p.drawString(50, height - 330, "FACTUUR AAN:")
+        p.setFont("Helvetica", 10)
+        p.drawString(50, height - 350, factuur.opdrachtgever_naam or "N/A")
+        p.drawString(50, height - 370, f"KVK: {factuur.kvk_nummer or 'N/A'}")
+        p.drawString(50, height - 390, factuur.adres or "N/A")
+        p.drawString(50, height - 410, f"{factuur.postcode or 'N/A'} {factuur.stad or 'N/A'}")
+        p.drawString(50, height - 430, f"Tel: {factuur.telefoon or 'N/A'}")
+        p.drawString(50, height - 450, f"Email: {factuur.email or 'N/A'}")
+        p.drawString(50, height - 470, "")
+        
+        # Add table headers
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(50, height - 490, "UREN")
+        p.drawString(150, height - 490, "LOCATIE")
+        p.drawString(300, height - 490, "TARIEF")
+        p.drawString(400, height - 490, "DATUM")
+        p.drawString(500, height - 490, "TOTAAL")
+        
+        # Add table content
+        p.setFont("Helvetica", 10)
+        # Parse the factuur_text to get shift details
+        lines = factuur.factuur_text.split('\n') if factuur.factuur_text else []
+        y = height - 510
+        total_amount = 0
+        
+        # Skip the client information part
+        shift_lines = [line for line in lines if line.strip() and not any(x in line for x in ["FACTUUR AAN:", "KVK:", "Tel:", "Email:", "FACTUUR", "DATUM", "FACTUURNUMMER", "SECUFY", "BEDANKT"])]
+        
+        # Draw a line under the headers
+        p.line(50, height - 495, 545, height - 495)
+        
+        for line in shift_lines:
+            if line.strip():
                 try:
-                    total_amount += float(parts[6])
-                except (ValueError, IndexError):
-                    pass
-                
-                y -= 20
-    
-    # Add subtotal
-    y -= 20
-    p.drawString(400, y, "Subtotaal")
-    p.drawString(500, y, f"€ {factuur.bedrag:.2f}")
-    
-    # Add BTW
-    y -= 20
-    btw = factuur.bedrag * 0.21
-    p.drawString(400, y, "Btw (21%)")
-    p.drawString(500, y, f"€ {btw:.2f}")
-    
-    # Add total
-    y -= 20
-    p.setFont("Helvetica-Bold", 10)
-    p.drawString(400, y, "Totaal")
-    p.drawString(500, y, f"€ {(factuur.bedrag + btw):.2f}")
-    
-    # Add footer
-    y -= 40
-    p.setFont("Helvetica-Bold", 10)
-    p.drawString(50, y, "BEDANKT VOOR UW KLANDIZIE")
-    y -= 20
-    p.setFont("Helvetica", 10)
-    p.drawString(50, y, f"Alle bedragen gelieve over te maken op rekeningnummer {company_info['bank']}")
-    
-    p.save()
-    buffer.seek(0)
-    return buffer.getvalue()
+                    # Format: "UREN\tLOCATIE\tTARIEF\tDATUM\tTOTAAL"
+                    parts = line.split('\t') # Split by tab
+                    
+                    if len(parts) == 5:  # Expect 5 parts: hours, location, rate, date, total
+                        hours_str = parts[0]
+                        location_name = parts[1]
+                        rate_str = parts[2]
+                        date_str = parts[3]
+                        total_str = parts[4]
+                        
+                        # Clean and convert numeric values
+                        hours = float(hours_str.replace(',', '.'))
+                        # Remove currency symbol and replace comma with dot for rate and total
+                        rate = float(rate_str.replace('€', '').replace(',', '.').strip())
+                        total = float(total_str.replace('€', '').replace(',', '.').strip())
+                        
+                        # Draw a line between rows
+                        p.line(50, y + 5, 545, y + 5)
+                        
+                        p.drawString(50, y, hours_str)
+                        p.drawString(150, y, location_name)
+                        p.drawString(300, y, rate_str)
+                        p.drawString(400, y, date_str)
+                        p.drawString(500, y, total_str)
+                        
+                        total_amount += total
+                        
+                        y -= 20
+                    else:
+                        logger.warning(f"Invalid line format: {line} (Expected 5 parts, got {len(parts)})")
+                except Exception as line_err:
+                    logger.error(f"Error processing line: {line}")
+                    logger.error(f"Error details: {str(line_err)}")
+                    continue
+        
+        # Draw a line before totals
+        p.line(50, y + 5, 545, y + 5)
+        
+        # Calculate VAT and total
+        vat_amount = total_amount * 0.21
+        final_total = total_amount + vat_amount
+        
+        # Add subtotal, BTW, and Total
+        y -= 20
+        p.drawString(400, y, "Subtotaal")
+        p.drawString(500, y, f"€ {total_amount:.2f}")
+        
+        # Add BTW
+        y -= 20
+        p.drawString(400, y, "Btw (21%)")
+        p.drawString(500, y, f"€ {vat_amount:.2f}")
+        
+        # Add total
+        y -= 20
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(400, y, "Totaal")
+        p.drawString(500, y, f"€ {final_total:.2f}")
+        
+        # Add footer
+        y -= 40
+        p.setFont("Helvetica-Bold", 10)
+        p.drawString(50, y, "BEDANKT VOOR UW KLANDIZIE")
+        y -= 20
+        p.setFont("Helvetica", 10)
+        p.drawString(50, y, f"Alle bedragen gelieve over te maken op rekeningnummer {company_info['bank']}")
+        
+        p.save()
+        buffer.seek(0)
+        return buffer.getvalue()
+    except Exception as e:
+        logger.error(f"Error generating PDF: {str(e)}", exc_info=True)
+        logger.error(f"Factuur data: {factuur.dict() if hasattr(factuur, 'dict') else str(factuur)}")
+        raise Exception(f"PDF generation failed: {str(e)}")
 
 @router.delete("/facturen/nummer/{factuurnummer}", include_in_schema=True)
 @router.delete("/api/facturen/nummer/{factuurnummer}", include_in_schema=True)
@@ -568,6 +714,102 @@ async def get_factuur_by_nummer(
     except Exception as e:
         logger.error(f"Error fetching invoice {factuurnummer}: {str(e)}")
         raise HTTPException(status_code=500, detail="Error fetching invoice")
+
+@router.post("/{factuur_id}/send")
+async def send_factuur(
+    factuur_id: int,
+    current_user: dict = Depends(require_roles(["boekhouding", "admin"])),
+    db: Session = Depends(get_db)
+):
+    """Send an invoice via email."""
+    # Create a unique log file for this invoice send attempt
+    log_file = os.path.join(log_dir, f'invoice_send_{factuur_id}_{datetime.now().strftime("%Y%m%d_%H%M%S")}.log')
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(file_handler)
+
+    try:
+        logger.info("="*50)
+        logger.info(f"Starting invoice send process for invoice ID: {factuur_id}")
+        logger.info(f"Timestamp: {datetime.now()}")
+        logger.info(f"User: {current_user.username if hasattr(current_user, 'username') else 'Unknown'}")
+        logger.info("="*50)
+        
+        # Get invoice
+        logger.debug(f"Fetching invoice with ID: {factuur_id}")
+        invoice = db.query(Factuur).filter(Factuur.id == factuur_id).first()
+        if not invoice:
+            logger.error(f"Invoice not found with ID: {factuur_id}")
+            raise HTTPException(status_code=404, detail="Invoice not found")
+        logger.debug(f"Found invoice: {invoice.factuurnummer}")
+
+        # Check for valid email
+        logger.debug(f"Validating invoice email: {invoice.email}")
+        if not invoice.email or "@" not in invoice.email:
+            logger.error(f"Invoice {factuur_id} has missing or invalid email: {invoice.email}")
+            raise HTTPException(status_code=400, detail="Invoice has missing or invalid email address")
+        logger.debug("Email validation passed")
+
+        # Generate PDF
+        try:
+            logger.debug("Generating PDF for invoice")
+            pdf_content = generate_pdf(invoice)
+            if not pdf_content:
+                logger.error("PDF generation returned empty content")
+                raise Exception("PDF generation returned empty content")
+            logger.debug(f"PDF generated successfully, size: {len(pdf_content)} bytes")
+        except Exception as pdf_err:
+            logger.error(f"PDF generation failed for invoice {factuur_id}: {str(pdf_err)}", exc_info=True)
+            logger.error(f"Error type: {type(pdf_err)}")
+            logger.error(f"Error details: {pdf_err.__dict__ if hasattr(pdf_err, '__dict__') else 'No details available'}")
+            logger.error(f"Stack trace:", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"PDF generation failed: {str(pdf_err)}")
+
+        # Send email
+        try:
+            # Validate email configuration
+            logger.debug("Validating email configuration")
+            logger.debug(f"Email config: {EMAIL_CONFIG}")
+            if not all([EMAIL_CONFIG['username'], EMAIL_CONFIG['password']]):
+                missing = [k for k, v in EMAIL_CONFIG.items() if not v and k in ['username', 'password']]
+                logger.error(f"Missing email configuration: {', '.join(missing)}")
+                raise Exception(f"Missing email configuration: {', '.join(missing)}")
+            logger.debug("Email configuration validation passed")
+
+            logger.info(f"Attempting to send email to {invoice.email}")
+            email_sent = send_invoice_email(invoice, pdf_content)
+            if not email_sent:
+                logger.error("Email sending failed (unknown error)")
+                raise Exception("Email sending failed (unknown error)")
+
+            logger.info("Updating invoice status to 'sent'")
+            invoice.status = 'sent'
+            db.commit()
+            logger.info(f"Successfully sent invoice {factuur_id} to {invoice.email}")
+            logger.info("="*50)
+            return {"message": "Invoice sent successfully"}
+
+        except Exception as email_err:
+            logger.error(f"Email sending failed for invoice {factuur_id}: {str(email_err)}", exc_info=True)
+            logger.error(f"Error type: {type(email_err)}")
+            logger.error(f"Error details: {email_err.__dict__ if hasattr(email_err, '__dict__') else 'No details available'}")
+            logger.error(f"Stack trace:", exc_info=True)
+            raise HTTPException(status_code=500, detail=f"Email sending failed: {str(email_err)}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error sending invoice {factuur_id}: {str(e)}", exc_info=True)
+        logger.error(f"Error type: {type(e)}")
+        logger.error(f"Error details: {e.__dict__ if hasattr(e, '__dict__') else 'No details available'}")
+        logger.error(f"Stack trace:", exc_info=True)
+        logger.error("="*50)
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+    finally:
+        # Remove the file handler to avoid duplicate logs
+        logger.removeHandler(file_handler)
+        file_handler.close()
 
 # Export the router
 __all__ = ["router"]

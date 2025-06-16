@@ -1,6 +1,7 @@
 from .service import router
 from .models import Factuur, Loonstrook
-from .schemas import FactuurBase, FactuurCreate, FactuurResponse, LoonstrookBase, LoonstrookCreate, LoonstrookResponse
+from backend.facturatie import FactuurBase
+from .schemas import FactuurCreate, FactuurResponse, LoonstrookBase, LoonstrookCreate, LoonstrookResponse
 
 __all__ = [
     "router",

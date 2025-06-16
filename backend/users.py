@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.orm import Session
 from typing import List
 from database import get_db
-from models import User, Role, Medewerker
+from models import User, Role, Medewerker, ChatMessage
 from auth import get_current_user, UserResponse, UserBase, UserCreate, pwd_context
 from datetime import datetime
 import logging
@@ -48,14 +48,33 @@ async def update_user(user_id: int, user_update: UserBase, current_user: dict = 
 
 @router.delete("/{user_id}", response_model=UserResponse)
 async def delete_user(user_id: int, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
-    """Delete a user."""
-    db_user = db.query(User).filter(User.id == user_id).first()
-    if not db_user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    db.delete(db_user)
-    db.commit()
-    return db_user
+    """Delete a user and their associated employee profile if it exists."""
+    try:
+        db_user = db.query(User).filter(User.id == user_id).first()
+        if not db_user:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        # Find and delete associated employee profile
+        employee = db.query(Medewerker).filter(Medewerker.user_id == db_user.id).first()
+        if employee:
+            # Delete any associated chat messages first
+            db.query(ChatMessage).filter(
+                (ChatMessage.sender_id == db_user.id) | 
+                (ChatMessage.receiver_id == db_user.id)
+            ).delete()
+            
+            # Now delete the employee profile
+            db.delete(employee)
+        
+        # Delete the user
+        db.delete(db_user)
+        db.commit()
+        
+        return db_user
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error deleting user: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete user: {str(e)}")
 
 @router.post("/", response_model=UserResponse)
 async def create_user(user: UserCreate, current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -78,14 +97,19 @@ async def create_user(user: UserCreate, current_user: dict = Depends(get_current
         db_user = db.query(User).filter(User.username == user.username).first()
         if db_user:
             logger.warning(f"Username {user.username} already exists")
-            raise HTTPException(status_code=400, detail="Username already registered")
+            raise HTTPException(status_code=400, detail="Username already exists. Please choose a different username.")
         
-        # Check if email already exists
+        # Check if email already exists in both User and Medewerker tables
         logger.info(f"Checking if email {user.email} exists")
-        db_user = db.query(User).filter(User.email == user.email).first()
-        if db_user:
-            logger.warning(f"Email {user.email} already exists")
-            raise HTTPException(status_code=400, detail="Email address already registered")
+        existing_email_user = db.query(User).filter(User.email == user.email).first()
+        if existing_email_user:
+            logger.warning(f"Email {user.email} already exists in users table")
+            raise HTTPException(status_code=400, detail="Email address already exists in users table. Please use a different email address.")
+            
+        existing_email_employee = db.query(Medewerker).filter(Medewerker.email == user.email).first()
+        if existing_email_employee:
+            logger.warning(f"Email {user.email} already exists in medewerkers table")
+            raise HTTPException(status_code=400, detail="Email address already exists in employees table. Please use a different email address.")
         
         # Get the role
         logger.info(f"Looking up role: {user.role}")
@@ -112,8 +136,6 @@ async def create_user(user: UserCreate, current_user: dict = Depends(get_current
             logger.info(f"Successfully created user account: {db_user.username}")
         except Exception as e:
             logger.error(f"Failed to create user account: {str(e)}")
-            logger.error(f"Error type: {type(e)}")
-            logger.error(f"Error details: {e.__dict__ if hasattr(e, '__dict__') else 'No details available'}")
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to create user account: {str(e)}")
         
@@ -123,14 +145,14 @@ async def create_user(user: UserCreate, current_user: dict = Depends(get_current
             try:
                 current_date = datetime.utcnow()
                 employee = Medewerker(
-                    user_id=db_user.username,  # Link to user account
+                    user_id=db_user.username,
                     naam=user.full_name,
                     email=user.email,
-                    telefoon="",  # Default empty
-                    adres="",  # Default empty
-                    geboortedatum=current_date,  # Default to current date
+                    telefoon="",
+                    adres="",
+                    geboortedatum=current_date,
                     in_dienst=current_date,
-                    uit_dienst=None,  # Not set for new employees
+                    uit_dienst=None,
                     pas_type="Standard",
                     pas_nummer="",
                     pas_vervaldatum=current_date,
@@ -140,21 +162,16 @@ async def create_user(user: UserCreate, current_user: dict = Depends(get_current
                     contract_vervaldatum=None,
                     contract_bestand=None
                 )
-                logger.info(f"Created Medewerker object: {employee.__dict__}")
                 db.add(employee)
                 try:
-                    db.flush()  # Flush to check for any constraint violations
+                    db.flush()
                     logger.info(f"Successfully created employee profile for: {db_user.username}")
                 except Exception as e:
                     logger.error(f"Failed to create employee profile: {str(e)}")
-                    logger.error(f"Error type: {type(e)}")
-                    logger.error(f"Error details: {e.__dict__ if hasattr(e, '__dict__') else 'No details available'}")
                     db.rollback()
                     raise HTTPException(status_code=500, detail=f"Failed to create employee profile: {str(e)}")
             except Exception as e:
                 logger.error(f"Failed to create employee profile: {str(e)}")
-                logger.error(f"Error type: {type(e)}")
-                logger.error(f"Error details: {e.__dict__ if hasattr(e, '__dict__') else 'No details available'}")
                 db.rollback()
                 raise HTTPException(status_code=500, detail=f"Failed to create employee profile: {str(e)}")
         
@@ -164,15 +181,14 @@ async def create_user(user: UserCreate, current_user: dict = Depends(get_current
             logger.info("Transaction committed successfully")
         except Exception as e:
             logger.error(f"Failed to commit transaction: {str(e)}")
-            logger.error(f"Error type: {type(e)}")
-            logger.error(f"Error details: {e.__dict__ if hasattr(e, '__dict__') else 'No details available'}")
             db.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to commit transaction: {str(e)}")
         
         return db_user
+    except HTTPException as he:
+        # Re-raise HTTP exceptions as they already have proper status codes and messages
+        raise he
     except Exception as e:
         logger.error(f"Unexpected error in create_user: {str(e)}")
         db.rollback()
-        if "Duplicate entry" in str(e) and "email" in str(e):
-            raise HTTPException(status_code=400, detail="Email address already registered")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")

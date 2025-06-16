@@ -40,6 +40,7 @@ export default function Clients() {
   const [clients, setClients] = useState<Opdrachtgever[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [selectedClient, setSelectedClient] = useState<Opdrachtgever | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
   const [formData, setFormData] = useState({
     naam: '',
     bedrijfsnaam: '',
@@ -157,6 +158,20 @@ export default function Clients() {
       email: '',
     });
   };
+
+  const filteredClients = clients.filter((client) => {
+    const searchTermLower = searchTerm.toLowerCase();
+    return (
+      (client.naam?.toLowerCase() || '').includes(searchTermLower) ||
+      (client.bedrijfsnaam?.toLowerCase() || '').includes(searchTermLower) ||
+      (client.kvk_nummer?.toLowerCase() || '').includes(searchTermLower) ||
+      (client.adres?.toLowerCase() || '').includes(searchTermLower) ||
+      (client.postcode?.toLowerCase() || '').includes(searchTermLower) ||
+      (client.stad?.toLowerCase() || '').includes(searchTermLower) ||
+      (client.telefoon?.toLowerCase() || '').includes(searchTermLower) ||
+      (client.email?.toLowerCase() || '').includes(searchTermLower)
+    );
+  });
 
   return (
     <div className="container mx-auto py-8">
@@ -279,6 +294,15 @@ export default function Clients() {
         </Dialog>
       </div>
 
+      <div className="mb-6">
+        <Input
+          placeholder="Search clients..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          className="w-full"
+        />
+      </div>
+
       <Table>
         <TableHeader>
           <TableRow>
@@ -294,7 +318,7 @@ export default function Clients() {
           </TableRow>
         </TableHeader>
         <TableBody>
-          {clients.map((client) => (
+          {filteredClients.map((client) => (
             <TableRow key={client.id}>
               <TableCell>{client.naam}</TableCell>
               <TableCell>{client.bedrijfsnaam}</TableCell>

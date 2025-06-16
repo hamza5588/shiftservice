@@ -486,17 +486,19 @@ async def delete_verloning(
 @router.get("/my-payroll", response_model=List[PayrollEntry])
 async def get_my_payroll(
     year: Optional[int] = Query(None, description="Het jaar waarvoor de loonstrook wordt gegenereerd"),
-    current_user: dict = Depends(get_current_user)
+    current_user: User = Depends(get_current_user)
 ):
     """
     Get payroll information for the current employee.
     Only employees can access this endpoint.
     """
-    if "employee" not in current_user["roles"]:
+    # Get user roles from the User model
+    user_roles = [role.name for role in current_user.roles]
+    if "employee" not in user_roles:
         raise HTTPException(status_code=403, detail="Only employees can view their own payroll")
     
     all_payroll = await get_payroll(year=year)
-    return [entry for entry in all_payroll if entry["employee_id"] == current_user["username"]]
+    return [entry for entry in all_payroll if entry["employee_id"] == current_user.username]
 
 
 @router.get("/my-payroll/export", response_class=StreamingResponse)

@@ -374,6 +374,35 @@ async def update_employee_profile(
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 
+@employee_profiles_router.delete("/{employee_id}")
+async def delete_employee_profile(
+    employee_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Delete an employee profile by ID."""
+    try:
+        if not employee_id or employee_id == "undefined":
+            raise HTTPException(status_code=400, detail="Employee ID is required")
+            
+        try:
+            employee_id_int = int(employee_id)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid employee ID format")
+            
+        employee = db.query(Medewerker).filter(Medewerker.id == employee_id_int).first()
+        if not employee:
+            raise HTTPException(status_code=404, detail="Employee profile not found")
+        
+        # Delete the employee profile
+        db.delete(employee)
+        db.commit()
+        
+        return {"message": "Employee profile deleted successfully"}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
 # Functie om de start- en einddatum van een vierwekenperiode te berekenen
 def get_period_dates(year: int, periode: int) -> (date, date):
     if periode < 1 or periode > 13:

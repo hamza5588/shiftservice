@@ -1,0 +1,6 @@
+ALTER TABLE facturen
+ADD COLUMN client_name VARCHAR(100) NULL,
+ADD COLUMN issue_date DATE NULL,
+ADD COLUMN due_date DATE NULL,
+ADD COLUMN total_amount FLOAT NULL,
+ADD COLUMN breakdown JSON NULL; 

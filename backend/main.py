@@ -21,9 +21,9 @@ from employee_profiles import employee_profiles_router, payroll_router
 from medewerkers import router as medewerkers_router
 from locations import router as locations_router
 from notifications import router as notifications_router
-from database import engine
-from models import Base
+from database import engine, Base
 from init_db import init_db
+from hour_increase import router as hour_increase_router
 import logging
 
 # Configure logging
@@ -39,12 +39,10 @@ app = FastAPI(
 # Configure CORS - MUST BE BEFORE ANY ROUTES
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8080", "http://localhost:8000", "http://localhost", "http://127.0.0.1", "http://209.23.8.75"],  # Added http://localhost
+    allow_origins=["http://localhost:8080"],  # Frontend URL
     allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods
-    allow_headers=["*"],  # Allow all headers
-    expose_headers=["*"],  # Expose all headers
-    max_age=3600  # Cache preflight requests for 1 hour
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Create database tables and initialize admin on startup
@@ -95,6 +93,7 @@ app.include_router(payroll_router)
 app.include_router(medewerkers_router)
 app.include_router(locations_router)
 app.include_router(notifications_router)
+app.include_router(hour_increase_router)
 
 # ✅ Start de server correct
 if __name__ == "__main__":

@@ -3,6 +3,10 @@ import { useAuth } from '@/lib/AuthContext';
 import { locationRatesApi, locationsApi } from '@/lib/api';
 import { Location, LocationRate } from '@/lib/types';
 
+const roundToTwoDecimals = (num: number): number => {
+  return Math.round(num * 100) / 100;
+};
+
 export const LocationRates: React.FC = () => {
   const { user } = useAuth();
   const [locations, setLocations] = useState<Location[]>([]);
@@ -23,11 +27,11 @@ export const LocationRates: React.FC = () => {
     if (baseRate) {
       const base = parseFloat(baseRate);
       if (!isNaN(base)) {
-        setEveningRate((base * 1.1).toFixed(2));
-        setNightRate((base * 1.2).toFixed(2));
-        setWeekendRate((base * 1.35).toFixed(2));
-        setHolidayRate((base * 1.5).toFixed(2));
-        setNewYearsEveRate((base * 2).toFixed(2));
+        setEveningRate(roundToTwoDecimals(base * 1.1).toFixed(2));
+        setNightRate(roundToTwoDecimals(base * 1.2).toFixed(2));
+        setWeekendRate(roundToTwoDecimals(base * 1.35).toFixed(2));
+        setHolidayRate(roundToTwoDecimals(base * 1.5).toFixed(2));
+        setNewYearsEveRate(roundToTwoDecimals(base * 2).toFixed(2));
       }
     }
   }, [baseRate]);
@@ -115,19 +119,53 @@ export const LocationRates: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedLocation || !selectedPassType) return;
+    setError(null);
+    setValidationErrors([]);
+
+    // Validate required fields
+    if (!selectedLocation || !selectedPassType) {
+      setValidationErrors(['Please select both location and pass type']);
+      return;
+    }
+
+    // Validate numeric fields
+    const numericFields = {
+      baseRate,
+      eveningRate,
+      nightRate,
+      weekendRate,
+      holidayRate,
+      newYearsEveRate
+    };
+
+    const invalidFields = Object.entries(numericFields)
+      .filter(([_, value]) => isNaN(parseFloat(value)) || parseFloat(value) <= 0)
+      .map(([field]) => field.replace(/([A-Z])/g, ' $1').toLowerCase());
+
+    if (invalidFields.length > 0) {
+      setValidationErrors([
+        `Please enter valid numbers greater than 0 for: ${invalidFields.join(', ')}`
+      ]);
+      return;
+    }
 
     try {
-      const newRate = await locationRatesApi.create({
+      const base = parseFloat(baseRate);
+      const rateData = {
         location_id: selectedLocation,
-        pass_type: selectedPassType,
-        base_rate: parseFloat(baseRate),
-        evening_rate: parseFloat(eveningRate),
-        night_rate: parseFloat(nightRate),
-        weekend_rate: parseFloat(weekendRate),
-        holiday_rate: parseFloat(holidayRate),
-        new_years_eve_rate: parseFloat(newYearsEveRate),
-      });
+        pass_type: selectedPassType.toLowerCase(), // Ensure lowercase
+        base_rate: base,
+        evening_rate: roundToTwoDecimals(base * 1.1),
+        night_rate: roundToTwoDecimals(base * 1.2),
+        weekend_rate: roundToTwoDecimals(base * 1.35),
+        holiday_rate: roundToTwoDecimals(base * 1.5),
+        new_years_eve_rate: roundToTwoDecimals(base * 2),
+      };
+
+      console.log('Submitting rate data:', JSON.stringify(rateData, null, 2));
+
+      const newRate = await locationRatesApi.create(rateData);
+      console.log('Created new rate:', newRate);
 
       setRates([...rates, newRate]);
       
@@ -140,8 +178,33 @@ export const LocationRates: React.FC = () => {
       setWeekendRate('');
       setHolidayRate('');
       setNewYearsEveRate('');
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error creating rate:', error);
+      
+      // Extract error message
+      let errorMessage = 'Failed to create location rate';
+      if (error.response?.data?.detail) {
+        errorMessage = error.response.data.detail;
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+
+      setError(errorMessage);
+      
+      // If there are validation errors, add them to the list
+      if (error.response?.data?.errors) {
+        const errors = error.response.data.errors;
+        if (typeof errors === 'object') {
+          setValidationErrors(Object.values(errors));
+        } else if (Array.isArray(errors)) {
+          setValidationErrors(errors);
+        } else if (typeof errors === 'string') {
+          setValidationErrors([errors]);
+        }
+      } else if (error.response?.data?.detail) {
+        // If we have a detail message, add it to validation errors
+        setValidationErrors([error.response.data.detail]);
+      }
     }
   };
 
@@ -211,17 +274,17 @@ export const LocationRates: React.FC = () => {
               required
             >
               <option value="">Select a pass type</option>
-            
-              <option value="premium">Blue pass</option>
-              <option value="vip">Grey pass</option>
+              <option value="blue">Blue Pass</option>
+              <option value="grey">Grey Pass</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Base Rate</label>
+            <label className="block text-sm font-medium text-gray-700">Base Rate (€/hour)</label>
             <input
               type="number"
               step="0.01"
+              min="0"
               value={baseRate}
               onChange={(e) => setBaseRate(e.target.value)}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
@@ -230,10 +293,11 @@ export const LocationRates: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Evening Rate</label>
+            <label className="block text-sm font-medium text-gray-700">Evening Rate (€/hour)</label>
             <input
               type="number"
               step="0.01"
+              min="0"
               value={eveningRate}
               onChange={(e) => setEveningRate(e.target.value)}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
@@ -242,10 +306,11 @@ export const LocationRates: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Night Rate</label>
+            <label className="block text-sm font-medium text-gray-700">Night Rate (€/hour)</label>
             <input
               type="number"
               step="0.01"
+              min="0"
               value={nightRate}
               onChange={(e) => setNightRate(e.target.value)}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
@@ -254,10 +319,11 @@ export const LocationRates: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Weekend Rate</label>
+            <label className="block text-sm font-medium text-gray-700">Weekend Rate (€/hour)</label>
             <input
               type="number"
               step="0.01"
+              min="0"
               value={weekendRate}
               onChange={(e) => setWeekendRate(e.target.value)}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
@@ -266,10 +332,11 @@ export const LocationRates: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">Holiday Rate</label>
+            <label className="block text-sm font-medium text-gray-700">Holiday Rate (€/hour)</label>
             <input
               type="number"
               step="0.01"
+              min="0"
               value={holidayRate}
               onChange={(e) => setHolidayRate(e.target.value)}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
@@ -278,10 +345,11 @@ export const LocationRates: React.FC = () => {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700">New Year's Eve Rate</label>
+            <label className="block text-sm font-medium text-gray-700">New Year's Eve Rate (€/hour)</label>
             <input
               type="number"
               step="0.01"
+              min="0"
               value={newYearsEveRate}
               onChange={(e) => setNewYearsEveRate(e.target.value)}
               className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
@@ -293,53 +361,58 @@ export const LocationRates: React.FC = () => {
         <div className="mt-4">
           <button
             type="submit"
-            className="bg-indigo-600 text-white px-4 py-2 rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:ring-offset-2"
+            className="inline-flex justify-center py-2 px-4 border border-transparent shadow-sm text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
           >
-            Add Rate
+            Create Rate
           </button>
         </div>
       </form>
 
-      <div className="overflow-x-auto">
-        <table className="min-w-full bg-white border">
-          <thead>
-            <tr>
-              <th className="px-4 py-2 border">Location</th>
-              <th className="px-4 py-2 border">Pass Type</th>
-              <th className="px-4 py-2 border">Base Rate</th>
-              <th className="px-4 py-2 border">Evening Rate</th>
-              <th className="px-4 py-2 border">Night Rate</th>
-              <th className="px-4 py-2 border">Weekend Rate</th>
-              <th className="px-4 py-2 border">Holiday Rate</th>
-              <th className="px-4 py-2 border">New Year's Eve Rate</th>
-              <th className="px-4 py-2 border">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rates.map(rate => (
-              <tr key={rate.id}>
-                <td className="px-4 py-2 border">
-                  {locations.find(l => l.id === rate.location_id)?.naam}
-                </td>
-                <td className="px-4 py-2 border">{rate.pass_type}</td>
-                <td className="px-4 py-2 border">{rate.base_rate}</td>
-                <td className="px-4 py-2 border">{rate.evening_rate}</td>
-                <td className="px-4 py-2 border">{rate.night_rate}</td>
-                <td className="px-4 py-2 border">{rate.weekend_rate}</td>
-                <td className="px-4 py-2 border">{rate.holiday_rate}</td>
-                <td className="px-4 py-2 border">{rate.new_years_eve_rate}</td>
-                <td className="px-4 py-2 border">
-                  <button
-                    onClick={() => handleDelete(rate.id)}
-                    className="text-red-500 hover:text-red-700"
-                  >
-                    Delete
-                  </button>
-                </td>
+      <div className="mt-8">
+        <h3 className="text-lg font-medium text-gray-900 mb-4">Current Rates</h3>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pass Type</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Base Rate</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Evening Rate</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Night Rate</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Weekend Rate</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Holiday Rate</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">New Year's Eve Rate</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {rates.map((rate) => (
+                <tr key={rate.id}>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {rate.location?.naam || 'Unknown Location'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {rate.pass_type === 'blue' ? 'Blue Pass' : 'Grey Pass'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">€{rate.base_rate.toFixed(2)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">€{rate.evening_rate.toFixed(2)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">€{rate.night_rate.toFixed(2)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">€{rate.weekend_rate.toFixed(2)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">€{rate.holiday_rate.toFixed(2)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">€{rate.new_years_eve_rate.toFixed(2)}</td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <button
+                      onClick={() => handleDelete(rate.id)}
+                      className="text-red-600 hover:text-red-900"
+                    >
+                      Delete
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

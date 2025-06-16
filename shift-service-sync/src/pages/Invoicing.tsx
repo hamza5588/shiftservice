@@ -1,7 +1,9 @@
-import React from 'react';
-import { useQuery, useMutation } from '@tanstack/react-query';
+import React, { useState, useEffect } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { format } from 'date-fns';
+import { nl } from 'date-fns/locale';
 import { invoicesApi, opdrachtgeversApi, locationsApi, shiftsApi, locationRatesApi } from '@/lib/api';
-import { Invoice, LocationRate } from '@/lib/types';
+import { Invoice, Location as AppLocation, LocationRate, CreateInvoicePayload } from '@/lib/types';
 import { 
   Table, 
   TableBody, 
@@ -12,16 +14,15 @@ import {
 } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Search, Plus, FileText, Download, Eye, Calendar, Trash2 } from 'lucide-react';
-import { useState, useMemo, useEffect } from 'react';
-import { StatusBadge } from '@/components/ui/StatusBadge';
+import { Search, Plus, FileText, Download, Eye, Calendar, Trash2, Send, Loader2 } from 'lucide-react';
+import { useToast } from '@/components/ui/use-toast';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
 import { DatePicker } from '@/components/ui/date-picker';
-import { useToast } from '@/components/ui/use-toast';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { StatusBadge } from '@/components/StatusBadge';
 import InvoiceTemplate from '@/components/InvoiceTemplate';
 import { Spinner } from '@/components/ui/spinner';
 import { API_URL } from '@/config/api';
@@ -41,69 +42,40 @@ const defaultRates = {
   new_year_eve: 40.00 // Base + 100% (20.00 + 20.00)
 };
 
-// Define types for our data
-interface Shift {
-  id: number;
-  shift_date: string;
-  start_time: string;
-  end_time: string;
-  location_id: number;
-  employee_id: string;
-  location?: string;
-  location_details?: {
-    id: number;
-    naam: string;
-    adres: string;
-    stad: string;
-    provincie: string | null;
-  };
-  status?: string;
-  assigned_by_admin?: string | null;
-  reiskilometers?: number | null;
-  required_profile?: string;
-  titel?: string;
-  adres?: string;
-  provincie?: string;
-  stad?: string;
+interface BreakdownItem {
+  hours: number;
+  rate: number;
+  total: number;
 }
 
-interface Location {
-  id: number;
-  naam: string;
-  adres: string;
-  stad: string;
-  postcode: string;
-  provincie?: string;
-  opdrachtgever_id?: number;
-}
-
-interface LocationRate {
-  id: number;
-  location_id: number;
-  pass_type: string;
-  base_rate: number;
-  evening_rate: number;
-  night_rate: number;
-  weekend_rate: number;
-  holiday_rate: number;
-  new_years_eve_rate: number;
+interface Breakdown {
+  day: BreakdownItem;
+  evening: BreakdownItem;
+  night: BreakdownItem;
+  weekend: BreakdownItem;
+  holiday: BreakdownItem;
+  new_year_eve: BreakdownItem;
 }
 
 export default function Invoicing() {
   const [searchQuery, setSearchQuery] = useState('');
   const [viewInvoiceId, setViewInvoiceId] = useState<number | null>(null);
   const [isGenerateDialogOpen, setIsGenerateDialogOpen] = useState(false);
-  const [selectedClient, setSelectedClient] = useState<string>('');
+  const [selectedClient, setSelectedClient] = useState<number | null>(null);
   const [selectedLocation, setSelectedLocation] = useState<string>('');
-  const [startDate, setStartDate] = useState<Date | undefined>();
-  const [endDate, setEndDate] = useState<Date | undefined>();
+  const [startDate, setStartDate] = useState<Date | null>(null);
+  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [invoiceDate, setInvoiceDate] = useState<Date | null>(null);
+  const [dueDate, setDueDate] = useState<Date | null>(null);
   const [rates, setRates] = useState<typeof defaultRates>(defaultRates);
   const [vatRate, setVatRate] = useState(21);
   const [paymentTerms, setPaymentTerms] = useState(14);
   const { toast } = useToast();
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
-  const [selectedPassType, setSelectedPassType] = useState<string>('standard');
+  const [selectedPassType, setSelectedPassType] = useState<string>('blue');
   const [locationRates, setLocationRates] = useState<LocationRate[]>([]);
+  const queryClient = useQueryClient();
+  const [isGenerating, setIsGenerating] = useState(false);
 
   // Add delete mutation
   const deleteMutation = useMutation({
@@ -198,17 +170,70 @@ export default function Invoicing() {
   // Query for locations
   const { data: locations } = useQuery({
     queryKey: ['locations'],
-    queryFn: locationsApi.getAll,
+    queryFn: () => locationsApi.getAll(),
   });
 
   // Query for shifts
   const { data: shifts } = useQuery({
-    queryKey: ['shifts'],
-    queryFn: shiftsApi.getAll,
+    queryKey: ['shifts', selectedClient, selectedLocation, startDate, endDate],
+    queryFn: async () => {
+      if (!selectedClient || !selectedLocation || !startDate || !endDate) {
+        return Promise.resolve([]);
+      }
+      try {
+        const allShifts = await shiftsApi.getAll();
+        console.log('All shifts:', allShifts);
+        
+        // Filter shifts based on client, location and date range
+        const filteredShifts = allShifts.filter(shift => {
+          // Parse the shift date and normalize it to midnight UTC
+          const shiftDate = new Date(shift.shift_date + 'T00:00:00Z');
+          const normalizedStartDate = new Date(startDate.toISOString().split('T')[0] + 'T00:00:00Z');
+          const normalizedEndDate = new Date(endDate.toISOString().split('T')[0] + 'T00:00:00Z');
+          
+          const isInDateRange = shiftDate >= normalizedStartDate && shiftDate <= normalizedEndDate;
+          const matchesLocation = shift.location_id === parseInt(selectedLocation);
+          
+          console.log('Filtering shift:', {
+            shiftId: shift.id,
+            shiftDate: shift.shift_date,
+            parsedShiftDate: shiftDate.toISOString(),
+            normalizedStartDate: normalizedStartDate.toISOString(),
+            normalizedEndDate: normalizedEndDate.toISOString(),
+            locationId: shift.location_id,
+            expectedLocationId: parseInt(selectedLocation),
+            matchesLocation,
+            isInDateRange
+          });
+          
+          return matchesLocation && isInDateRange;
+        });
+        
+        console.log('Filtered shifts:', filteredShifts);
+        return filteredShifts;
+      } catch (error) {
+        console.error('Error fetching shifts:', error);
+        return [];
+      }
+    },
+    enabled: !!selectedClient && !!selectedLocation && !!startDate && !!endDate
   });
 
   // Add filtered locations state
-  const [filteredLocations, setFilteredLocations] = useState<Location[]>([]);
+  const [filteredLocations, setFilteredLocations] = useState<AppLocation[]>([]);
+
+  // Update filtered locations when client or locations change
+  useEffect(() => {
+    if (selectedClient && locations) {
+      const clientLocations = locations.filter(loc => 
+        loc.opdrachtgever_id === selectedClient
+      );
+      console.log('Filtered locations for client:', selectedClient, clientLocations);
+      setFilteredLocations(clientLocations);
+    } else {
+      setFilteredLocations([]);
+    }
+  }, [selectedClient, locations]);
 
   // Add a query to fetch a single invoice
   const { data: viewedInvoiceData, isLoading: isViewLoading, error: viewError } = useQuery({
@@ -271,7 +296,7 @@ export default function Invoicing() {
     console.log('Current rates:', currentRates);
     console.log('Parameters:', { clientId, locationId, startDate, endDate });
 
-    if (!shifts) {
+    if (!shifts || shifts.length === 0) {
       console.warn('No shifts data available');
       return {
         day: { hours: 0, rate: currentRates.base, total: 0 },
@@ -314,9 +339,9 @@ export default function Invoicing() {
       console.log('Shift filtering:', {
         shiftId: shift.id,
         shiftDate: shift.shift_date,
-        parsedShiftDate: shiftDate,
-        normalizedStartDate,
-        normalizedEndDate,
+        parsedShiftDate: shiftDate.toISOString(),
+        normalizedStartDate: normalizedStartDate.toISOString(),
+        normalizedEndDate: normalizedEndDate.toISOString(),
         locationId: shift.location_id,
         expectedLocationId: parseInt(locationId),
         matchesLocation,
@@ -329,6 +354,21 @@ export default function Invoicing() {
     console.log('Filtered shifts count:', filteredShifts.length);
     console.log('Filtered shifts:', filteredShifts);
 
+    // Create a map to store shifts by date
+    const shiftsByDate = new Map();
+
+    filteredShifts.forEach(shift => {
+      const shiftDate = parseDateString(shift.shift_date);
+      const dateKey = format(shiftDate, 'dd-MM-yyyy');
+      
+      if (!shiftsByDate.has(dateKey)) {
+        shiftsByDate.set(dateKey, []);
+      }
+      shiftsByDate.get(dateKey).push(shift);
+    });
+
+    console.log('Shifts grouped by date:', Object.fromEntries(shiftsByDate));
+
     const breakdown = {
       day: { hours: 0, rate: currentRates.base, total: 0 },
       evening: { hours: 0, rate: currentRates.evening, total: 0 },
@@ -338,6 +378,7 @@ export default function Invoicing() {
       new_year_eve: { hours: 0, rate: currentRates.new_year_eve, total: 0 }
     };
 
+    // Process each shift
     filteredShifts.forEach(shift => {
       const shiftDate = parseDateString(shift.shift_date);
       console.log('Processing shift:', {
@@ -424,84 +465,109 @@ export default function Invoicing() {
       finalTotal: totalAmount * (1 + vatRate / 100)
     });
 
-    return breakdown;
+    return { breakdown, filteredShifts };
   };
 
   // Update the viewedInvoice memo to use selectedInvoice
   const viewedInvoice = selectedInvoice;
 
-  // Mutation for generating invoice
+  // Add generate invoice mutation
   const generateInvoiceMutation = useMutation({
-    mutationFn: async () => {
-      if (!selectedClient || !selectedLocation || !startDate || !endDate) {
-        throw new Error('Please fill in all required fields');
+    mutationFn: async (payload: CreateInvoicePayload) => {
+      if (!selectedClient) {
+        throw new Error('Please select a client');
       }
-      if (endDate < startDate) {
-        throw new Error('End date must be after start date');
+      if (!selectedLocation) {
+        throw new Error('Please select a location');
+      }
+      if (!startDate) {
+        throw new Error('Please select a start date');
+      }
+      if (!endDate) {
+        throw new Error('Please select an end date');
+      }
+
+      // Calculate issue date and due date
+      const issueDate = new Date();
+      const dueDate = new Date(issueDate);
+      dueDate.setDate(dueDate.getDate() + paymentTerms);
+
+      // Get client and location information
+      const client = clients?.find(c => c.id.toString() === selectedClient.toString());
+      const location = locations?.find(l => l.id.toString() === selectedLocation);
+
+      if (!client) {
+        throw new Error('Client not found');
+      }
+      if (!location) {
+        throw new Error('Location not found');
       }
 
       // Calculate hours and amounts
-      const breakdown = calculateHoursFromShifts(selectedClient, selectedLocation, startDate, endDate);
-      console.log('Calculated breakdown:', breakdown);
+      const { breakdown, filteredShifts } = calculateHoursFromShifts(
+        selectedClient.toString(),
+        selectedLocation,
+        startDate,
+        endDate
+      );
 
-      const subtotal = Object.values(breakdown).reduce((sum, item) => sum + item.total, 0);
+      // Calculate subtotal from breakdown
+      const subtotal = calculateSubtotal(breakdown);
       const vatAmount = subtotal * (vatRate / 100);
       const totalAmount = subtotal + vatAmount;
 
-      // Get client and location details
-      const client = clients?.find(c => c.id.toString() === selectedClient);
-      const location = locations?.find(l => l.id.toString() === selectedLocation);
-
-      if (!client || !location) {
-        throw new Error('Client or location not found');
-      }
-
-      // Create invoice dates
-      const issueDate = new Date();
-      const dueDate = new Date();
-      dueDate.setDate(issueDate.getDate() + paymentTerms);
-
       // Create the invoice with all necessary fields
-      const response = await invoicesApi.create({
-        opdrachtgever_id: parseInt(selectedClient),
-        opdrachtgever_naam: client?.naam || '',
-        kvk_nummer: client?.kvk_nummer || '',
-        adres: client?.adres || '',
-        postcode: client?.postcode || '',
-        stad: client?.stad || '',
-        telefoon: client?.telefoon || '',
-        email: client?.email || '',
-        locatie: location?.naam || '',
-        factuurdatum: issueDate.toISOString().split('T')[0],
-        shift_date: startDate.toISOString().split('T')[0],
-        shift_date_end: endDate.toISOString().split('T')[0],
+      const initialPayload: CreateInvoicePayload = {
+        opdrachtgever_id: selectedClient,
+        opdrachtgever_naam: client.naam,
+        locatie: location.naam,
+        factuurdatum: format(issueDate, 'yyyy-MM-dd'),
+        shift_date: format(startDate, 'yyyy-MM-dd'),
+        shift_date_end: format(endDate, 'yyyy-MM-dd'),
         bedrag: totalAmount,
         status: 'open',
-        factuur_text: [
-          'Invoice details:',
-          `Period: ${formatDate(startDate.toISOString().split('T')[0])} - ${formatDate(endDate.toISOString().split('T')[0])}`,
-          `Day: ${breakdown.day.hours.toFixed(1)}h x €${breakdown.day.rate.toFixed(2)} = €${breakdown.day.total.toFixed(2)}`,
-          `Evening: ${breakdown.evening.hours.toFixed(1)}h x €${breakdown.evening.rate.toFixed(2)} = €${breakdown.evening.total.toFixed(2)}`,
-          `Night: ${breakdown.night.hours.toFixed(1)}h x €${breakdown.night.rate.toFixed(2)} = €${breakdown.night.total.toFixed(2)}`,
-          `Weekend: ${breakdown.weekend.hours.toFixed(1)}h x €${breakdown.weekend.rate.toFixed(2)} = €${breakdown.weekend.total.toFixed(2)}`,
-          `Holiday: ${breakdown.holiday.hours.toFixed(1)}h x €${breakdown.holiday.rate.toFixed(2)} = €${breakdown.holiday.total.toFixed(2)}`,
-          `New Year's Eve: ${breakdown.new_year_eve.hours.toFixed(1)}h x €${breakdown.new_year_eve.rate.toFixed(2)} = €${breakdown.new_year_eve.total.toFixed(2)}`,
-          '',
-          `Subtotal: €${subtotal.toFixed(2)}`,
-          `VAT (${vatRate}%): €${vatAmount.toFixed(2)}`,
-          `Total: €${totalAmount.toFixed(2)}`
-        ].join('\n'),
-        client_name: client?.naam || '',
-        issue_date: issueDate.toISOString().split('T')[0],
-        due_date: dueDate.toISOString().split('T')[0],
-        total_amount: totalAmount,
+        factuur_text: generateInvoiceText(client, location, breakdown, subtotal, vatAmount, totalAmount, issueDate, dueDate, filteredShifts),
+        subtotal,
         vat_amount: vatAmount,
-        subtotal: subtotal,
-        breakdown: breakdown
-      });
+        total_amount: totalAmount,
+        breakdown,
+        kvk_nummer: client.kvk_nummer || '',
+        adres: client.adres || '',
+        postcode: client.postcode || '',
+        stad: client.stad || '',
+        telefoon: client.telefoon || '',
+        email: client.email || '',
+        client_name: client.naam,
+        issue_date: format(issueDate, 'yyyy-MM-dd'),
+        due_date: format(dueDate, 'yyyy-MM-dd')
+      };
 
-      console.log('Created invoice:', response);
-      return response;
+      console.log('Submitting invoice data:', initialPayload);
+      
+      try {
+        const result = await invoicesApi.create(initialPayload);
+        return result;
+      } catch (error) {
+        // Check if the invoice was actually created despite the error
+        try {
+          const latestInvoices = await invoicesApi.getAll();
+          const createdInvoice = latestInvoices.find(inv => 
+            inv.opdrachtgever_id === selectedClient &&
+            inv.shift_date === format(startDate, 'yyyy-MM-dd') &&
+            inv.shift_date_end === format(endDate, 'yyyy-MM-dd')
+          );
+          
+          if (createdInvoice) {
+            console.log('Invoice was created successfully despite network error');
+            return createdInvoice;
+          }
+        } catch (checkError) {
+          console.error('Error checking for created invoice:', checkError);
+        }
+        
+        // If we get here, the invoice wasn't created
+          throw error;
+      }
     },
     onSuccess: async (data) => {
       toast({
@@ -517,9 +583,37 @@ export default function Invoicing() {
     },
     onError: (error) => {
       console.error('Invoice generation error:', error);
+      // Only show error toast if we're sure the invoice wasn't created
+      if (!error.message?.includes('CORS') && !error.message?.includes('Failed to fetch')) {
       toast({
         title: 'Error',
-        description: error.message,
+          description: error.message || 'Failed to generate invoice',
+        variant: 'destructive',
+      });
+      }
+    },
+  });
+
+  // Add send mutation
+  const sendInvoiceMutation = useMutation({
+    mutationFn: async (invoice: Invoice) => {
+      if (!invoice.id) {
+        throw new Error('Invalid invoice ID');
+      }
+      return invoicesApi.send(invoice.id);
+    },
+    onSuccess: () => {
+      toast({
+        title: 'Success',
+        description: 'Invoice sent successfully',
+      });
+      refetch();
+    },
+    onError: (error) => {
+      console.error('Send error:', error);
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to send invoice',
         variant: 'destructive',
       });
     },
@@ -528,7 +622,7 @@ export default function Invoicing() {
   const filteredInvoices = invoices?.filter(invoice => {
     return searchQuery === '' || 
       invoice.client_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      invoice.invoice_number?.toLowerCase().includes(searchQuery.toLowerCase());
+      invoice.factuurnummer?.toLowerCase().includes(searchQuery.toLowerCase());
   }) || [];
 
   const formatCurrency = (amount: number) => {
@@ -570,18 +664,9 @@ export default function Invoicing() {
 
   // Update the client selection handler
   const handleClientChange = (clientId: string) => {
-    setSelectedClient(clientId);
+    console.log('Client selected:', clientId);
+    setSelectedClient(parseInt(clientId));
     setSelectedLocation(''); // Reset location when client changes
-    
-    // Filter locations based on selected client
-    if (clientId && locations) {
-      const clientLocations = locations.filter(loc => 
-        loc.opdrachtgever_id?.toString() === clientId
-      );
-      setFilteredLocations(clientLocations);
-    } else {
-      setFilteredLocations([]);
-    }
   };
 
   const handleDownloadInvoice = async (invoice: Invoice) => {
@@ -604,7 +689,6 @@ export default function Invoicing() {
         root.render(
           <InvoiceTemplate 
             invoice={invoice} 
-            isPdf={true} 
           />
         );
         // Give time for the component to render and logo to load
@@ -686,6 +770,420 @@ export default function Invoicing() {
     }
   };
 
+  const handleGenerateInvoice = async () => {
+    try {
+    // Validate all required fields
+    if (!selectedClient) {
+      toast({
+        title: 'Error',
+        description: 'Please select a client',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!selectedLocation) {
+      toast({
+        title: 'Error',
+        description: 'Please select a location',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!startDate) {
+      toast({
+        title: 'Error',
+        description: 'Please select a start date',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!endDate) {
+      toast({
+        title: 'Error',
+        description: 'Please select an end date',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (!selectedPassType) {
+      toast({
+        title: 'Error',
+        description: 'Please select a pass type',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    // Validate date range
+    if (startDate > endDate) {
+      toast({
+        title: 'Error',
+        description: 'End date must be after start date',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsGenerating(true);
+
+      const client = clients?.find(c => c.id === selectedClient);
+      if (!client) {
+        throw new Error('Client not found');
+      }
+
+      const location = locations?.find(l => l.id === parseInt(selectedLocation));
+      if (!location) {
+        throw new Error('Location not found');
+      }
+
+      // Get the location rate for the selected location and pass type
+      const locationRate = locationRates.find(
+        rate => rate.location_id === parseInt(selectedLocation) && rate.pass_type === selectedPassType
+      );
+
+      if (!locationRate) {
+        throw new Error('No rates found for the selected location and pass type');
+      }
+
+      // Set invoice and due dates
+      const currentDate = new Date();
+      const dueDate = new Date(currentDate);
+      dueDate.setDate(dueDate.getDate() + paymentTerms);
+
+      const { breakdown, filteredShifts } = calculateHoursFromShifts(
+        selectedClient.toString(),
+        selectedLocation,
+        startDate,
+        endDate
+      );
+
+      // Check if there are any shifts
+      const hasShifts = Object.values(breakdown).some(category => category.hours > 0);
+      if (!hasShifts) {
+        throw new Error('No shifts found for the selected date range');
+      }
+
+      const subtotal = calculateSubtotal(breakdown);
+      const vatAmount = subtotal * (vatRate / 100);
+      const totalAmount = subtotal + vatAmount;
+
+      const initialPayload: CreateInvoicePayload = {
+        opdrachtgever_id: selectedClient,
+        opdrachtgever_naam: client.naam,
+        locatie: location.naam,
+        factuurdatum: format(currentDate, 'yyyy-MM-dd'),
+        shift_date: format(startDate, 'yyyy-MM-dd'),
+        shift_date_end: format(endDate, 'yyyy-MM-dd'),
+        bedrag: totalAmount,
+        status: 'open',
+        factuur_text: generateInvoiceText(client, location, breakdown, subtotal, vatAmount, totalAmount, currentDate, dueDate, filteredShifts),
+        subtotal,
+        vat_amount: vatAmount,
+        total_amount: totalAmount,
+        breakdown,
+        kvk_nummer: client.kvk_nummer || '',
+        adres: client.adres || '',
+        postcode: client.postcode || '',
+        stad: client.stad || '',
+        telefoon: client.telefoon || '',
+        email: client.email || '',
+        client_name: client.naam,
+        issue_date: format(currentDate, 'yyyy-MM-dd'),
+        due_date: format(dueDate, 'yyyy-MM-dd')
+      };
+
+      console.log('Submitting invoice data:', initialPayload);
+
+      // Add retry logic
+      let retryCount = 0;
+      const maxRetries = 3;
+      let lastError;
+
+      while (retryCount < maxRetries) {
+        try {
+          const result = await generateInvoiceMutation.mutateAsync(initialPayload);
+          // If we get here, the mutation was successful
+          toast({
+            title: 'Success',
+            description: 'Invoice generated successfully',
+          });
+          setIsGenerateDialogOpen(false);
+          await refetch();
+          return;
+        } catch (error) {
+          lastError = error;
+          console.warn(`Attempt ${retryCount + 1} failed:`, error);
+          
+          // Check if the invoice was actually created despite the error
+          try {
+            await refetch();
+            const latestInvoices = await invoicesApi.getAll();
+            const createdInvoice = latestInvoices.find(inv => 
+              inv.opdrachtgever_id === selectedClient &&
+              inv.shift_date === format(startDate, 'yyyy-MM-dd') &&
+              inv.shift_date_end === format(endDate, 'yyyy-MM-dd')
+            );
+            
+            if (createdInvoice) {
+              console.log('Invoice was created successfully despite network error');
+              toast({
+                title: 'Success',
+                description: 'Invoice generated successfully',
+              });
+              setIsGenerateDialogOpen(false);
+              setSelectedInvoice(createdInvoice);
+              setViewInvoiceId(createdInvoice.id);
+              return;
+            }
+          } catch (checkError) {
+            console.error('Error checking for created invoice:', checkError);
+          }
+          
+          retryCount++;
+          if (retryCount < maxRetries) {
+            // Wait before retrying (exponential backoff)
+            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, retryCount)));
+          }
+        }
+      }
+
+      // If we get here, all retries failed
+      throw lastError || new Error('Failed to generate invoice after multiple attempts');
+    } catch (error) {
+      console.error('Error generating invoice:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to generate invoice',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  const calculateBreakdown = (shifts: any[]): Breakdown => {
+    const breakdown = {
+      day: { hours: 0, rate: defaultRates.base, total: 0 },
+      evening: { hours: 0, rate: defaultRates.evening, total: 0 },
+      night: { hours: 0, rate: defaultRates.night, total: 0 },
+      weekend: { hours: 0, rate: defaultRates.weekend, total: 0 },
+      holiday: { hours: 0, rate: defaultRates.holiday, total: 0 },
+      new_year_eve: { hours: 0, rate: defaultRates.new_year_eve, total: 0 }
+    };
+
+    shifts.forEach(shift => {
+      const hours = parseFloat(shift.uren);
+      const rate = getRateForShift(shift);
+      const total = hours * rate;
+
+      if (isNewYearEve(shift.datum)) {
+        breakdown.new_year_eve.hours += hours;
+        breakdown.new_year_eve.total += total;
+      } else if (isHoliday(shift.datum)) {
+        breakdown.holiday.hours += hours;
+        breakdown.holiday.total += total;
+      } else if (isWeekend(shift.datum)) {
+        breakdown.weekend.hours += hours;
+        breakdown.weekend.total += total;
+      } else if (isNightShift(shift.start_time)) {
+        breakdown.night.hours += hours;
+        breakdown.night.total += total;
+      } else if (isEveningShift(shift.start_time)) {
+        breakdown.evening.hours += hours;
+        breakdown.evening.total += total;
+      } else {
+        breakdown.day.hours += hours;
+        breakdown.day.total += total;
+      }
+    });
+
+    return breakdown;
+  };
+
+  const calculateSubtotal = (breakdown: Breakdown): number => {
+    return Object.values(breakdown).reduce((total, category) => total + category.total, 0);
+  };
+
+  const getRateForShift = (shift: any): number => {
+    if (isNewYearEve(shift.datum)) return defaultRates.new_year_eve;
+    if (isHoliday(shift.datum)) return defaultRates.holiday;
+    if (isWeekend(shift.datum)) return defaultRates.weekend;
+    if (isNightShift(shift.start_time)) return defaultRates.night;
+    if (isEveningShift(shift.start_time)) return defaultRates.evening;
+    return defaultRates.base;
+  };
+
+  const isNewYearEve = (date: string): boolean => {
+    const d = new Date(date);
+    return d.getMonth() === 11 && d.getDate() === 31;
+  };
+
+  const isHoliday = (date: string): boolean => {
+    // Add holiday logic here
+    return false;
+  };
+
+  const isWeekend = (date: string): boolean => {
+    const d = new Date(date);
+    return d.getDay() === 0 || d.getDay() === 6;
+  };
+
+  const isNightShift = (time: string): boolean => {
+    const hour = parseInt(time.split(':')[0]);
+    return hour >= 22 || hour < 6;
+  };
+
+  const isEveningShift = (time: string): boolean => {
+    const hour = parseInt(time.split(':')[0]);
+    return hour >= 18 && hour < 22;
+  };
+
+  const generateInvoiceText = (
+    client: any,
+    location: any,
+    breakdown: Breakdown,
+    subtotal: number,
+    vatAmount: number,
+    totalAmount: number,
+    issueDate: Date,
+    dueDate: Date,
+    filteredShifts: any[]
+  ): string => {
+    console.log('Generating invoice text with breakdown:', JSON.stringify(breakdown, null, 2));
+    console.log('Generating invoice text with filteredShifts:', JSON.stringify(filteredShifts, null, 2));
+    
+    const formatCurrency = (amount: number) => `€ ${amount.toFixed(2).replace('.', ',')}`;
+    const formatHours = (hours: number) => hours.toFixed(1).replace('.', ',');
+
+    // Create detailed breakdown text from individual filtered shifts
+    const shiftsBreakdownText = filteredShifts.map((shift: any) => {
+      console.log('Processing individual shift for invoice text:', shift);
+
+      const [startHours, startMinutes] = shift.start_time.split(':').map(Number);
+      const [endHours, endMinutes] = shift.end_time.split(':').map(Number);
+      
+      const startTime = new Date(shift.shift_date);
+      startTime.setHours(startHours, startMinutes, 0);
+      
+      const endTime = new Date(shift.shift_date);
+      endTime.setHours(endHours, endMinutes, 0);
+      
+      if (endTime < startTime) {
+        endTime.setDate(endTime.getDate() + 1);
+      }
+      
+      const hours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+
+      // Determine the rate based on shift time and location rates
+      const locationRate = locationRates.find(
+        rate => rate.location_id === shift.location_id && rate.pass_type === selectedPassType
+      );
+
+      let rate = defaultRates.base;
+      if (locationRate) {
+        if (startHours >= 22 || startHours < 6) {
+          rate = locationRate.night_rate;
+        } else if (startHours >= 18 && startHours < 22) {
+          rate = locationRate.evening_rate;
+        } else {
+          rate = locationRate.base_rate;
+        }
+      } else { // Fallback to default rates if locationRate is not found
+         if (startHours >= 22 || startHours < 6) {
+          rate = defaultRates.night;
+        } else if (startHours >= 18 && startHours < 22) {
+          rate = defaultRates.evening;
+        }
+      }
+
+      const total = hours * rate;
+
+      const shiftLine = [
+        formatHours(hours),                                 // UREN
+        location.naam,                                      // LOCATIE (Using the invoice location, not shift.locatie)
+        formatCurrency(rate),                               // TARIEF
+        format(new Date(shift.shift_date), 'dd-MM-yyyy'),  // DATUM
+        formatCurrency(total)                               // TOTAAL
+      ].join('\t');
+      
+      console.log('Generated shift line:', {
+        shiftId: shift.id,
+        shiftDate: shift.shift_date,
+        startTime: shift.start_time,
+        endTime: shift.end_time,
+        hours,
+        rate,
+        total,
+        formattedLine: shiftLine
+      });
+      
+      return shiftLine;
+    }).join('\n');
+
+    console.log('Final shifts breakdown text for invoice:', shiftsBreakdownText);
+
+    const invoiceText = `FACTUUR
+
+DATUM
+${format(issueDate, 'dd-MM-yyyy')}
+
+FACTUURNUMMER
+PENDING
+
+SECUFY
+94486786
+
+Soetendaalseweg 32c
+
+3036ER Rotterdam
+
+0685455793
+
+vraagje@secufy.nl
+
+FACTUUR AAN:
+${client.naam}
+
+KVK: ${client.kvk_nummer || ''}
+
+${client.adres || ''}
+
+${client.postcode || ''} ${client.stad || ''}
+
+Tel: ${client.telefoon || ''}
+
+Email: ${client.email || ''}
+
+FACTUUR DETAILS:
+Periode: ${format(startDate!, 'dd-MM-yyyy')} t/m ${format(endDate!, 'dd-MM-yyyy')}
+
+Locatie: ${location.naam}
+
+UREN\tLOCATIE\tTARIEF\tDATUM\tTOTAAL
+${shiftsBreakdownText}
+
+Subtotaal
+${formatCurrency(subtotal)}
+Btw (${vatRate}%)
+${formatCurrency(vatAmount)}
+Totaal
+${formatCurrency(totalAmount)}
+
+BETALINGSGEGEVENS:
+Bank: NL11 ABNA 0137 7274 61
+
+Ten name van: Secufy BV
+
+Btw nummer: NL004445566B01`;
+
+    console.log('Generated invoice text:', invoiceText);
+    return invoiceText;
+  };
+
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
@@ -712,7 +1210,7 @@ export default function Invoicing() {
               <div className="grid gap-4 py-4">
                 <div className="grid gap-2">
                   <Label htmlFor="client">Client</Label>
-                  <Select value={selectedClient} onValueChange={handleClientChange}>
+                  <Select value={selectedClient?.toString()} onValueChange={handleClientChange}>
                     <SelectTrigger>
                       <SelectValue placeholder="Select a client" />
                     </SelectTrigger>
@@ -766,14 +1264,14 @@ export default function Invoicing() {
                       <SelectValue placeholder="Select pass type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="standard">Blue pass</SelectItem>
-                      <SelectItem value="premium">Grey pass</SelectItem>
+                      <SelectItem value="blue">Blue pass</SelectItem>
+                      <SelectItem value="grey">Grey pass</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
                 {/* Show current rates for the selected location and pass type */}
-                {selectedLocation && (
+                {selectedLocation && selectedPassType && (
                   <div className="border-t pt-4 mt-2">
                     <h4 className="font-medium mb-3">Current Rates for Selected Location</h4>
                     {locationRates
@@ -781,7 +1279,7 @@ export default function Invoicing() {
                       .map(rate => (
                         <div key={rate.id} className="grid grid-cols-2 gap-4">
                           <div className="grid gap-2">
-                            <Label>Day Rate (€)</Label>
+                            <Label>Base Rate (€)</Label>
                             <Input value={rate.base_rate} disabled />
                           </div>
                           <div className="grid gap-2">
@@ -806,6 +1304,11 @@ export default function Invoicing() {
                           </div>
                         </div>
                       ))}
+                    {locationRates.filter(rate => rate.location_id === parseInt(selectedLocation) && rate.pass_type === selectedPassType).length === 0 && (
+                      <div className="text-sm text-muted-foreground">
+                        No rates found for this location and pass type combination.
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -833,10 +1336,17 @@ export default function Invoicing() {
               </div>
               <DialogFooter>
                 <Button
-                  onClick={() => generateInvoiceMutation.mutate()}
-                  disabled={generateInvoiceMutation.isPending}
+                  onClick={handleGenerateInvoice}
+                  disabled={isGenerating}
                 >
-                  {generateInvoiceMutation.isPending ? 'Generating...' : 'Generate Invoice'}
+                  {isGenerating ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    'Generate Invoice'
+                  )}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -845,184 +1355,131 @@ export default function Invoicing() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4 mb-6">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Search invoices..."
-            className="pl-9"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+      <div className="mb-6">
+        <div className="flex items-center gap-4">
+          <div className="relative flex-1">
+            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search invoices..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="pl-8"
+            />
+          </div>
         </div>
       </div>
 
-      {/* Invoices Table */}
-      <div className="bg-card rounded-md border shadow-sm">
+      {/* Invoice Table */}
+      <div className="rounded-md border">
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead key="header-invoice-number">Invoice Number</TableHead>
-              <TableHead key="header-client">Client</TableHead>
-              <TableHead key="header-issue-date">Issue Date</TableHead>
-              <TableHead key="header-due-date">Due Date</TableHead>
-              <TableHead key="header-amount">Amount</TableHead>
-              <TableHead key="header-status">Status</TableHead>
-              <TableHead key="header-actions" className="text-right">Actions</TableHead>
+              <TableHead>Invoice Number</TableHead>
+              <TableHead>Client</TableHead>
+              <TableHead>Location</TableHead>
+              <TableHead>Date</TableHead>
+              <TableHead>Amount</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
-              // Loading state
-              [...Array(3)].map((_, rowIndex) => (
-                <TableRow key={`loading-row-${rowIndex}`}>
-                  {[...Array(7)].map((_, cellIndex) => (
-                    <TableCell key={`loading-cell-${rowIndex}-${cellIndex}`}>
-                      <div className="h-5 bg-muted animate-pulse rounded"></div>
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
-            ) : filteredInvoices.length > 0 ? (
-              filteredInvoices.map((invoice) => {
-                // Ensure we have a valid ID for the key
-                const rowKey = invoice.id ? `invoice-${invoice.id}` : `invoice-${Math.random()}`;
-                return (
-                  <TableRow key={rowKey}>
-                    <TableCell key={`${rowKey}-number`}>
-                      <div className="flex items-center">
-                        <FileText className="h-4 w-4 mr-2 text-muted-foreground" />
-                        {invoice.factuurnummer || invoice.id}
-                      </div>
-                    </TableCell>
-                    <TableCell key={`${rowKey}-client`}>
-                      {invoice.opdrachtgever_naam || invoice.locatie || '-'}
-                    </TableCell>
-                    <TableCell key={`${rowKey}-issue-date`}>
-                      {formatDate(invoice.factuurdatum)}
-                    </TableCell>
-                    <TableCell key={`${rowKey}-due-date`}>
-                      {formatDate(invoice.factuurdatum)}
-                    </TableCell>
-                    <TableCell key={`${rowKey}-amount`}>
-                      {formatCurrency(invoice.bedrag || 0)}
-                    </TableCell>
-                    <TableCell key={`${rowKey}-status`}>
-                      <StatusBadge status={invoice.status || 'open'} />
-                    </TableCell>
-                    <TableCell key={`${rowKey}-actions`} className="text-right">
-                      <div className="flex justify-end space-x-1">
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={() => {
-                            setSelectedInvoice(invoice);
-                            setViewInvoiceId(invoice.id);
-                          }}
-                        >
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={() => handleDownloadInvoice(invoice)}
-                        >
-                          <Download className="h-4 w-4" />
-                        </Button>
-                        <Button 
-                          variant="ghost" 
-                          size="icon"
-                          onClick={() => {
-                            console.log('Delete button clicked for invoice:', invoice);
-                            if (invoice.id || invoice.factuurnummer) {
-                              setInvoiceToDelete(invoice);
-                            } else {
-                              console.error('Invoice ID and factuurnummer are missing:', invoice);
-                              toast({
-                                title: 'Error',
-                                description: 'Cannot delete invoice: Missing invoice identifier',
-                                variant: 'destructive',
-                              });
-                            }
-                          }}
-                        >
-                          <Trash2 className="h-4 w-4 text-destructive" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                );
-              })
-            ) : (
-              <TableRow key="no-invoices">
-                <TableCell colSpan={7} className="text-center h-32">
+              <TableRow>
+                <TableCell colSpan={7} className="text-center">
+                  <Spinner />
+                </TableCell>
+              </TableRow>
+            ) : invoices?.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center">
                   No invoices found
                 </TableCell>
               </TableRow>
+            ) : (
+              invoices?.map((invoice) => (
+                <TableRow key={invoice.id}>
+                  <TableCell>{invoice.factuurnummer}</TableCell>
+                  <TableCell>{invoice.opdrachtgever_naam}</TableCell>
+                  <TableCell>{invoice.locatie}</TableCell>
+                  <TableCell>{formatDate(invoice.factuurdatum)}</TableCell>
+                  <TableCell>{formatCurrency(invoice.bedrag)}</TableCell>
+                  <TableCell>
+                    <StatusBadge status={invoice.status} />
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setViewInvoiceId(invoice.id)}
+                      >
+                        <Eye className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleDownloadInvoice(invoice)}
+                      >
+                        <Download className="h-4 w-4" />
+                      </Button>
+                      {invoice.status === 'open' && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => sendInvoiceMutation.mutate(invoice)}
+                          disabled={sendInvoiceMutation.isPending}
+                        >
+                          {sendInvoiceMutation.isPending ? (
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                          ) : (
+                            <Send className="h-4 w-4" />
+                          )}
+                        </Button>
+                      )}
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => setInvoiceToDelete(invoice)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
             )}
           </TableBody>
         </Table>
       </div>
 
       {/* View Invoice Dialog */}
-      <Dialog open={selectedInvoice !== null} onOpenChange={(open) => {
-        if (!open) {
-          setViewInvoiceId(null);
-          setSelectedInvoice(null);
-        }
-      }}>
-        <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
+      <Dialog open={!!viewInvoiceId} onOpenChange={() => setViewInvoiceId(null)}>
+        <DialogContent className="max-w-4xl">
           <DialogHeader>
-            <DialogTitle>
-              Invoice {selectedInvoice?.factuurnummer || 'Loading...'}
-            </DialogTitle>
-            <DialogDescription>
-              Viewing invoice details
-            </DialogDescription>
+            <DialogTitle>View Invoice</DialogTitle>
           </DialogHeader>
-
           {isViewLoading ? (
-            <div className="flex items-center justify-center p-8">
-              <Spinner className="w-8 h-8" />
+            <div className="flex justify-center p-8">
+              <Spinner />
             </div>
           ) : viewError ? (
-            <div className="text-center p-8 text-muted-foreground">
-              <p>Error loading invoice: {viewError.message}</p>
-              <p className="text-sm mt-2">Please try again or contact support if the issue persists.</p>
+            <div className="text-center text-red-500 p-4">
+              Error loading invoice
             </div>
           ) : viewedInvoiceData ? (
-            <div className="space-y-6">
-              <div className="bg-white p-8 rounded-lg shadow-sm">
-                <InvoiceTemplate invoice={viewedInvoiceData} />
-              </div>
-            </div>
-          ) : selectedInvoice ? (
-            <div className="space-y-6">
-              <div className="bg-white p-8 rounded-lg shadow-sm">
-                <InvoiceTemplate invoice={selectedInvoice} />
-              </div>
-            </div>
-          ) : (
-            <div className="text-center p-8 text-muted-foreground">
-              <p>Invoice not found</p>
-              <p className="text-sm mt-2">
-                Invoice ID: {viewInvoiceId}<br />
-                Invoice Number: {selectedInvoice?.factuurnummer}
-              </p>
-            </div>
-          )}
+            <InvoiceTemplate invoice={viewedInvoiceData} />
+          ) : null}
         </DialogContent>
       </Dialog>
 
-      {/* Add confirmation dialog for delete */}
-      <Dialog open={invoiceToDelete !== null} onOpenChange={(open) => {
-        if (!open) setInvoiceToDelete(null);
-      }}>
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={!!invoiceToDelete} onOpenChange={() => setInvoiceToDelete(null)}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Delete Invoice</DialogTitle>
             <DialogDescription>
-              Are you sure you want to delete invoice {invoiceToDelete?.factuurnummer || invoiceToDelete?.id}? This action cannot be undone.
+              Are you sure you want to delete this invoice? This action cannot be undone.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1034,22 +1491,9 @@ export default function Invoicing() {
             </Button>
             <Button
               variant="destructive"
-              onClick={() => {
-                console.log('Confirming delete for invoice:', invoiceToDelete);
-                if (invoiceToDelete) {
-                  deleteMutation.mutate(invoiceToDelete);
-                } else {
-                  console.error('No invoice to delete');
-                  toast({
-                    title: 'Error',
-                    description: 'Cannot delete invoice: No invoice selected',
-                    variant: 'destructive',
-                  });
-                }
-              }}
-              disabled={deleteMutation.isPending}
+              onClick={() => invoiceToDelete && deleteMutation.mutate(invoiceToDelete)}
             >
-              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>

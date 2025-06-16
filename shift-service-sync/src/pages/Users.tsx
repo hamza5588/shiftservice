@@ -27,7 +27,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { usersService, User, CreateUserData, UpdateUserData } from '@/lib/users';
+import { usersApi } from '@/lib/users';
+import { User } from '@/lib/types';
 import { Pencil, Trash2, Plus } from 'lucide-react';
 
 export default function Users() {
@@ -40,7 +41,7 @@ export default function Users() {
   const { toast } = useToast();
 
   // Form states
-  const [createForm, setCreateForm] = useState<CreateUserData>({
+  const [createForm, setCreateForm] = useState({
     username: '',
     email: '',
     full_name: '',
@@ -48,7 +49,7 @@ export default function Users() {
     role: '',
   });
 
-  const [editForm, setEditForm] = useState<UpdateUserData>({
+  const [editForm, setEditForm] = useState({
     username: '',
     email: '',
     full_name: '',
@@ -61,8 +62,8 @@ export default function Users() {
   const loadData = async () => {
     try {
       const [usersData, rolesData] = await Promise.all([
-        usersService.getUsers(),
-        usersService.getRoles(),
+        usersApi.getAll(),
+        usersApi.getRoles(),
       ]);
       setUsers(usersData);
       setRoles(rolesData);
@@ -80,7 +81,7 @@ export default function Users() {
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      await usersService.createUser(createForm);
+      await usersApi.create(createForm);
       toast({
         title: 'Success',
         description: 'User created successfully',
@@ -94,11 +95,43 @@ export default function Users() {
         role: '',
       });
       loadData();
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Error creating user:', error);
+      
+      let errorMessage = 'Failed to create user';
+      
+      // Handle different types of errors
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        const errorData = error.response.data;
+        console.error('Server error response:', errorData);
+
+        if (errorData.detail) {
+          errorMessage = errorData.detail;
+        } else if (errorData.username) {
+          errorMessage = `Username error: ${errorData.username.join(', ')}`;
+        } else if (errorData.email) {
+          errorMessage = `Email error: ${errorData.email.join(', ')}`;
+        } else if (errorData.non_field_errors) {
+          errorMessage = errorData.non_field_errors.join(', ');
+        }
+      } else if (error.request) {
+        // The request was made but no response was received
+        errorMessage = "No response from server. Please check your connection.";
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        if (error.message.includes('username')) {
+          errorMessage = "Username already exists. Please choose a different username.";
+        } else if (error.message.includes('email')) {
+          errorMessage = "Email already exists. Please use a different email address.";
+        }
+      }
+
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Failed to create user',
+        description: errorMessage,
       });
     }
   };
@@ -108,7 +141,7 @@ export default function Users() {
     if (!selectedUser) return;
 
     try {
-      await usersService.updateUser(selectedUser.id, editForm);
+      await usersApi.update(selectedUser.id.toString(), editForm);
       toast({
         title: 'Success',
         description: 'User updated successfully',
@@ -134,7 +167,7 @@ export default function Users() {
     if (!window.confirm('Are you sure you want to delete this user?')) return;
 
     try {
-      await usersService.deleteUser(id);
+      await usersApi.delete(id.toString());
       toast({
         title: 'Success',
         description: 'User deleted successfully',

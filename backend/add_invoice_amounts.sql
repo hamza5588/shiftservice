@@ -1,0 +1,3 @@
+ALTER TABLE facturen
+ADD COLUMN subtotal FLOAT NULL,
+ADD COLUMN vat_amount FLOAT NULL; 

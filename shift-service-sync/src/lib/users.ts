@@ -1,16 +1,5 @@
 import { User } from './types';
 import { apiRequest } from './api';
-import { API_BASE_URL } from '../config/api';
-
-const API_URL = API_BASE_URL;
-
-export interface User {
-  id: number;
-  username: string;
-  email: string;
-  full_name: string;
-  roles: string[];
-}
 
 export interface CreateUserData {
   username: string;
@@ -32,10 +21,7 @@ export const usersApi = {
     return Array.isArray(response) ? response : [];
   },
   getById: (id: string) => apiRequest<User>(`/users/${id}`),
-  create: (user: CreateUserData) => apiRequest<User>('/users/', {
-    method: 'POST',
-    body: JSON.stringify(user)
-  }),
+  create: (user: CreateUserData) => apiRequest<User>('/users/', 'POST', user),
   update: (id: string, user: UpdateUserData) => apiRequest<User>(`/users/${id}`, {
     method: 'PUT',
     body: JSON.stringify(user)

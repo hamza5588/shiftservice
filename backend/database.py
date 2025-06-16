@@ -6,7 +6,7 @@ import os
 # Database connection settings
 DB_USER = os.getenv("DB_USER", "planner_user")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "planner_password")
-DB_HOST = os.getenv("DB_HOST", "planner_mysql")  # Use Docker service name
+DB_HOST = os.getenv("DB_HOST", "mysql")  # Use service name for Docker
 DB_PORT = os.getenv("DB_PORT", "3306")
 DB_NAME = os.getenv("DB_NAME", "planner_db")
 

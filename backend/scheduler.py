@@ -1,15 +1,12 @@
 from apscheduler.schedulers.background import BackgroundScheduler
 from datetime import datetime, date, timedelta
-from facturatie import  Factuur
+from models import Factuur, Opdrachtgever, Shift
 from planning import fake_shifts_db
 from betalingsherinneringen import send_payment_reminders
 from tarieven import fake_tarieven_db
 import holidays
 import io
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from email.mime.application import MIMEApplication
+from email_config import EMAIL_CONFIG, send_invoice_email
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from reportlab.lib.pagesizes import A4
@@ -18,9 +15,14 @@ from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.lib import colors
 from invoice_payroll import generate_invoice
 from database import get_db
-from models import Opdrachtgever, Shift
 import logging
 import sys
+from typing import List, Dict, Optional
+from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_
+from apscheduler.triggers.cron import CronTrigger
+import os
+from dotenv import load_dotenv
 
 # Configure logging to display in console with timestamp
 logging.basicConfig(
@@ -32,15 +34,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Email Configuration
-EMAIL_CONFIG = {
-    'host': 'smtp.gmail.com',
-    'port': 587,
-    'use_tls': True,
-    'username': 'y7hamzakhanswati@gmail.com',
-    'password': 'sbep muwk dinz xsgx',
-    'from_email': 'y7hamzakhanswati@gmail.com'
-}
+# Load environment variables
+load_dotenv()
 
 # BTW-percentage
 VAT_PERCENTAGE = 0.21
@@ -248,63 +243,8 @@ def create_invoice_pdf(invoice: Factuur) -> bytes:
     buffer.seek(0)
     return buffer.getvalue()
 
-def send_invoice_email(invoice: Factuur, pdf_content: bytes):
-    """Send invoice via email."""
-    try:
-        msg = MIMEMultipart()
-        msg['From'] = EMAIL_CONFIG['from_email']
-        msg['To'] = invoice.email
-        msg['Subject'] = f"Factuur #{invoice.factuurnummer or invoice.id} van Secufy"
-
-        # Email body
-        body = f"""Geachte {invoice.opdrachtgever_naam},
-
-Hierbij ontvangt u de factuur #{invoice.factuurnummer or invoice.id}.
-
-Factuurgegevens:
-Bedrag: €{invoice.bedrag:.2f}
-Datum: {invoice.factuurdatum}
-
-Voor vragen kunt u contact met ons opnemen.
-
-Met vriendelijke groet,
-Secufy Team"""
-
-        msg.attach(MIMEText(body, 'plain'))
-
-        # Attach PDF
-        pdf_attachment = MIMEApplication(pdf_content, _subtype='pdf')
-        pdf_attachment.add_header('Content-Disposition', 'attachment', 
-                                filename=f'factuur_{invoice.factuurnummer or invoice.id}.pdf')
-        msg.attach(pdf_attachment)
-
-        # Send email
-        with smtplib.SMTP(EMAIL_CONFIG['host'], EMAIL_CONFIG['port']) as server:
-            server.starttls()
-            server.login(EMAIL_CONFIG['username'], EMAIL_CONFIG['password'])
-            server.send_message(msg)
-
-        print(f"\n{'='*50}")
-        print(f"✅ Invoice #{invoice.factuurnummer or invoice.id} sent successfully")
-        print(f"📧 Sent to: {invoice.email}")
-        print(f"�� Amount: €{invoice.bedrag:.2f}")
-        print(f"📅 Date: {invoice.factuurdatum}")
-        print(f"{'='*50}\n")
-        
-        logger.info(f"Invoice #{invoice.factuurnummer or invoice.id} sent to {invoice.email}")
-        return True
-    except Exception as e:
-        print(f"\n{'='*50}")
-        print(f"❌ Failed to send invoice #{invoice.factuurnummer or invoice.id}")
-        print(f"📧 Recipient: {invoice.email}")
-        print(f"❌ Error: {str(e)}")
-        print(f"{'='*50}\n")
-        
-        logger.error(f"Failed to send invoice email to {invoice.email}: {str(e)}")
-        return False
-
 def process_invoices():
-    """Process all open invoices and send them via email."""
+    """Process all open invoices and update their status."""
     logger.info("Starting invoice processing...")
     
     db = next(get_db())
@@ -314,15 +254,10 @@ def process_invoices():
         
         for invoice in open_invoices:
             try:
-                # Generate PDF
-                pdf_content = create_invoice_pdf(invoice)
-                
-                # Send email
-                if send_invoice_email(invoice, pdf_content):
-                    invoice.status = 'sent'
-                    logger.info(f"Successfully sent invoice {invoice.id} to {invoice.email}")
-                else:
-                    logger.error(f"Failed to send invoice {invoice.id} to {invoice.email}")
+                # Only update status if needed
+                if invoice.status != 'open':
+                    invoice.status = 'open'
+                    logger.info(f"Updated status for invoice {invoice.id}")
             
             except Exception as e:
                 logger.error(f"Error processing invoice {invoice.id}: {str(e)}")
@@ -339,13 +274,15 @@ def process_invoices():
 # Initialize scheduler with timezone
 scheduler = BackgroundScheduler(timezone='Europe/Amsterdam')
 
-# Add jobs with updated interval (10 seconds)
+# Add jobs with updated interval
 scheduler.add_job(process_invoices, 'interval', seconds=10)
 scheduler.add_job(send_payment_reminders, 'cron', hour=9, minute=0)
 scheduler.add_job(
     generate_weekly_invoices,
-    'interval',
-    seconds=10,  # Changed from weekly to every 10 seconds
+    'cron',
+    day_of_week='mon',
+    hour=9,
+    minute=0,
     id='weekly_invoice_generation'
 )
 
@@ -354,9 +291,9 @@ scheduler.start()
 print(f"\n{'='*50}")
 print("🚀 Scheduler started")
 print("📧 Invoice processing will run every 10 seconds")
-print("📊 Weekly invoice generation will run every 10 seconds")
+print("📊 Weekly invoice generation will run every Monday at 9:00 AM")
 print(f"{'='*50}\n")
-logger.info("Scheduler started - Invoice processing and weekly generation set to 10-second intervals")
+logger.info("Scheduler started - Invoice processing and weekly generation configured")
 
 # PDF Export Router
 pdf_export_router = APIRouter(

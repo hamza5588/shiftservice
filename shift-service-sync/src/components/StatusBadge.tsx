@@ -8,64 +8,24 @@ interface StatusBadgeProps {
 }
 
 export function StatusBadge({ status, className }: StatusBadgeProps) {
-  const getStatusConfig = (status: string) => {
-    switch (status) {
-      case 'open':
-        return {
-          label: 'Open',
-          variant: 'default' as const,
-        };
-      case 'betaald':
-        return {
-          label: 'Paid',
-          variant: 'success' as const,
-        };
-      case 'herinnering14':
-        return {
-          label: 'Reminder 14',
-          variant: 'warning' as const,
-        };
-      case 'herinnering30':
-        return {
-          label: 'Reminder 30',
-          variant: 'destructive' as const,
-        };
+  const getStatusColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'paid':
+        return 'bg-green-500';
       case 'pending':
-        return {
-          label: 'Pending',
-          variant: 'secondary' as const,
-        };
-      case 'approved':
-        return {
-          label: 'Approved',
-          variant: 'success' as const,
-        };
-      case 'rejected':
-        return {
-          label: 'Rejected',
-          variant: 'destructive' as const,
-        };
-      case 'canceled':
-        return {
-          label: 'Canceled',
-          variant: 'destructive' as const,
-        };
+        return 'bg-yellow-500';
+      case 'overdue':
+        return 'bg-red-500';
+      case 'draft':
+        return 'bg-gray-500';
       default:
-        return {
-          label: status,
-          variant: 'outline' as const,
-        };
+        return 'bg-gray-500';
     }
   };
 
-  const config = getStatusConfig(status);
-
   return (
-    <Badge
-      variant={config.variant}
-      className={cn('capitalize', className)}
-    >
-      {config.label}
+    <Badge className={`${getStatusColor(status)} text-white ${className}`}>
+      {status.charAt(0).toUpperCase() + status.slice(1).toLowerCase()}
     </Badge>
   );
 }

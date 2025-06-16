@@ -1,139 +1,174 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Invoice } from '@/lib/types';
 
-// Import logo directly as a static asset
-import logo from '../assets/logo.jpg';
-
-// Company information configuration
+// Company details - these will be used as defaults if not provided in the invoice
 const COMPANY_INFO = {
-  name: "Secufy Security Services",
-  kvk: "94486786",
-  address: "Soetendalseweg 32c",
-  postcode: "3036ER",
-  city: "Rotterdam",
-  phone: "0685455793",
-  email: "vraagje@secufy.nl",
-  bank: "NL11 ABNA 0137 7274"
+  name: 'Secufy BV',
+  kvk: '94486786',
+  address: 'Soetendaalseweg 32c',
+  postal: '3036ER',
+  city: 'Rotterdam',
+  phone: '0685455793',
+  email: 'vraagje@secufy.nl',
+  bankAccount: 'NL11 ABNA 0137 7274 61',
+  btwNumber: 'NL004445566B01'
 };
 
 interface InvoiceTemplateProps {
   invoice: Invoice;
-  isPdf?: boolean;
 }
 
-export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, isPdf = false }) => {
-  const [logoUrl, setLogoUrl] = useState<string>('');
-
-  useEffect(() => {
-    // Get the absolute URL for the logo
-    const getLogoUrl = async () => {
-      try {
-        // Import the logo dynamically
-        const logoModule = await import('../assets/logo.jpg');
-        setLogoUrl(logoModule.default);
-      } catch (error) {
-        console.error('Error loading logo:', error);
-      }
-    };
-
-    getLogoUrl();
-  }, []);
+export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice }) => {
+  console.log('InvoiceTemplate received invoice:', {
+    id: invoice.id,
+    factuurnummer: invoice.factuurnummer,
+    factuur_text: invoice.factuur_text,
+    opdrachtgever_naam: invoice.opdrachtgever_naam,
+    locatie: invoice.locatie,
+    bedrag: invoice.bedrag,
+    status: invoice.status,
+    breakdown: invoice.breakdown
+  });
 
   // Helper function to safely format currency
   const formatCurrency = (amount: number | undefined) => {
-    if (amount === undefined) return '€ 0,00';
-    try {
-      return new Intl.NumberFormat('nl-NL', {
-        style: 'currency',
-        currency: 'EUR',
-        minimumFractionDigits: 2,
-        maximumFractionDigits: 2
-      }).format(amount).replace(',', '.');
-    } catch (error) {
-      console.error('Error formatting currency:', error);
-      return '€ 0,00';
-    }
+    if (amount === undefined || isNaN(amount)) return '€ 0,00';
+    return new Intl.NumberFormat('nl-NL', {
+      style: 'currency',
+      currency: 'EUR'
+    }).format(amount);
   };
 
   // Helper function to safely format hours
   const formatHours = (hours: number | undefined) => {
-    if (hours === undefined) return '0.00';
-    try {
-      return hours.toFixed(2).replace(',', '.');
-    } catch (error) {
-      console.error('Error formatting hours:', error);
-      return '0.00';
-    }
+    if (hours === undefined || isNaN(hours)) return '0,0';
+    return hours.toFixed(1).replace('.', ',');
   };
 
   // Helper function to format date
-  const formatDate = (dateString: string | undefined) => {
-    if (!dateString) return '';
+  const formatDate = (date: string | undefined) => {
+    if (!date) return '';
     try {
-      const date = new Date(dateString);
-      return date.toLocaleDateString('nl-NL', {
-        day: '2-digit',
-        month: '2-digit',
-        year: 'numeric'
-      }).replace(/\//g, '-');
+      const [year, month, day] = date.split('-');
+      return `${day}-${month}-${year}`;
     } catch (error) {
       console.error('Error formatting date:', error);
       return '';
     }
   };
 
-  // Parse the factuur_text to get the breakdown details
-  const parseFactuurText = (text: string) => {
-    const lines = text.split('\n');
-    const breakdown: Record<string, { hours: number; rate: number; total: number }> = {};
+  // Parse shift details from invoice text
+  const parseShiftDetails = () => {
+    const lines = invoice.factuur_text?.split('\n') || [];
+    const shiftDetails = [];
     let subtotal = 0;
     let vatAmount = 0;
     let total = 0;
     
-    lines.forEach(line => {
-      if (line.includes(':')) {
-        const [period, details] = line.split(':');
-        const trimmedPeriod = period.toLowerCase().trim();
-        
-        // Handle summary lines
-        if (trimmedPeriod === 'subtotal') {
-          const amount = details.match(/€([\d.]+)/)?.[1];
-          if (amount) subtotal = parseFloat(amount);
-          return;
-        }
-        if (trimmedPeriod === 'vat' || trimmedPeriod === 'btw') {
-          const amount = details.match(/€([\d.]+)/)?.[1];
-          if (amount) vatAmount = parseFloat(amount);
-          return;
-        }
-        if (trimmedPeriod === 'total') {
-          const amount = details.match(/€([\d.]+)/)?.[1];
-          if (amount) total = parseFloat(amount);
-          return;
-        }
-        
-        // Extract hours, rate, and total using regex
-        const matches = details.match(/([\d.]+)h x €([\d.]+) = €([\d.]+)/);
-        if (matches) {
-          const [_, hours, rate, total] = matches;
-          breakdown[trimmedPeriod] = {
-            hours: parseFloat(hours),
-            rate: parseFloat(rate),
-            total: parseFloat(total)
-          };
-        }
-      }
-    });
-
-    // If VAT amount is 0 but we have total and subtotal, calculate VAT
-    if (vatAmount === 0 && total > 0 && subtotal > 0) {
-      vatAmount = total - subtotal;
+    console.log('Parsing invoice text for invoice:', invoice.factuurnummer);
+    console.log('Raw invoice text:', invoice.factuur_text);
+    
+    // Find the start of the shift details section
+    const shiftDetailsStartIndex = lines.findIndex(line => 
+      line.trim() === 'UREN\tLOCATIE\tTARIEF\tDATUM\tTOTAAL'
+    );
+    
+    if (shiftDetailsStartIndex === -1) {
+      console.log('Could not find shift details header');
+      return { shiftDetails: [], subtotal: 0, vatAmount: 0, total: 0 };
     }
     
-    return { breakdown, subtotal, vatAmount, total };
+    console.log('Found shift details header at index:', shiftDetailsStartIndex);
+    
+    // Process lines after the header until we hit the subtotal
+    for (let i = shiftDetailsStartIndex + 1; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      
+      // Stop if we hit the subtotal section
+      if (line.startsWith('Subtotaal')) {
+        const amountStr = line.split('€')[1]?.trim();
+        if (amountStr) {
+          subtotal = parseFloat(amountStr.replace(',', '.'));
+        }
+        continue;
+      }
+      
+      // Skip if we're in the totals section
+      if (line.startsWith('Btw') || line.startsWith('Totaal')) {
+        continue;
+      }
+      
+      console.log('Processing line:', line);
+      
+      // Parse shift line
+      const parts = line.split('\t');
+      console.log('Split parts:', parts);
+      
+      if (parts.length >= 5) {
+        const [uren, locatie, tarief, datum, totaal] = parts;
+        
+        // Convert string values to numbers
+        const hours = parseFloat(uren.replace(',', '.'));
+        const rate = parseFloat(tarief.replace('€', '').replace(',', '.').trim());
+        const amount = parseFloat(totaal.replace('€', '').replace(',', '.').trim());
+        
+        console.log('Parsed values:', { hours, rate, amount });
+        
+        if (!isNaN(hours) && !isNaN(rate) && !isNaN(amount)) {
+          const shiftDetail = {
+            uren: hours,
+            locatie: locatie,
+            tarief: rate,
+            datum: datum,
+            totaal: amount
+          };
+          shiftDetails.push(shiftDetail);
+          subtotal += amount; // Add to subtotal as we process each shift
+          console.log('Added shift detail:', shiftDetail, 'Current shiftDetails length:', shiftDetails.length, 'Current shiftDetails:', shiftDetails);
+        }
+      } else if (parts.length === 4) {
+        // Handle case where date is missing
+        const [uren, locatie, tarief, totaal] = parts;
+        
+        // Convert string values to numbers
+        const hours = parseFloat(uren.replace(',', '.'));
+        const rate = parseFloat(tarief.replace('€', '').replace(',', '.').trim());
+        const amount = parseFloat(totaal.replace('€', '').replace(',', '.').trim());
+        
+        console.log('Parsed values (4 parts):', { hours, rate, amount });
+        
+        if (!isNaN(hours) && !isNaN(rate) && !isNaN(amount)) {
+          const shiftDetail = {
+            uren: hours,
+            locatie: locatie,
+            tarief: rate,
+            datum: invoice.shift_date || '',
+            totaal: amount
+          };
+          shiftDetails.push(shiftDetail);
+          subtotal += amount; // Add to subtotal as we process each shift
+          console.log('Added shift detail (4 parts):', shiftDetail, 'Current shiftDetails length:', shiftDetails.length, 'Current shiftDetails:', shiftDetails);
+        }
+      }
+    }
+    
+    // Calculate VAT and total
+    vatAmount = subtotal * 0.21;
+    total = subtotal + vatAmount;
+    
+    // If we couldn't parse any shifts but have invoice amounts, use those
+    if (subtotal === 0 && invoice.bedrag) {
+      total = invoice.bedrag;
+      vatAmount = total / 1.21 * 0.21;
+      subtotal = total - vatAmount;
+    }
+    
+    console.log('Final parsed details:', { shiftDetails, subtotal, vatAmount, total });
+    return { shiftDetails, subtotal, vatAmount, total };
   };
 
-  const { breakdown, subtotal, vatAmount, total } = parseFactuurText(invoice.factuur_text);
+  const { shiftDetails, subtotal, vatAmount, total } = parseShiftDetails();
 
   return (
     <div className="bg-white p-8 max-w-4xl mx-auto">
@@ -148,41 +183,20 @@ export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, isPdf
             </div>
             <div>
               <h2 className="font-bold">FACTUURNUMMER</h2>
-              <p>{invoice.factuurnummer || '-'}</p>
+              <p>{invoice.factuurnummer}</p>
             </div>
           </div>
         </div>
         <div className="text-right">
-          <div 
-            style={{
-              display: 'inline-block',
-              backgroundColor: '#F4B740',
-              padding: '16px',
-              marginBottom: '16px',
-              width: '120px',
-              height: '60px',
-              textAlign: 'center'
-            }}
-          >
-            <img
-              src={logo}
-              alt={COMPANY_INFO.name}
-              style={{ 
-                width: '100%',
-                height: '100%',
-                objectFit: 'contain',
-                display: 'block',
-                margin: '0 auto'
-              }}
-              crossOrigin="anonymous"
-            />
+          <div className="bg-[#F4B740] p-4 mb-4 inline-block min-w-[120px] text-center">
+            <div className="text-white font-bold text-xl">SECUFY</div>
           </div>
-          <div style={{ marginTop: '16px', fontSize: '14px' }}>
-            <p style={{ margin: '4px 0' }}>{COMPANY_INFO.kvk}</p>
-            <p style={{ margin: '4px 0' }}>{COMPANY_INFO.address}</p>
-            <p style={{ margin: '4px 0' }}>{COMPANY_INFO.postcode} {COMPANY_INFO.city}</p>
-            <p style={{ margin: '4px 0' }}>{COMPANY_INFO.phone}</p>
-            <p style={{ margin: '4px 0' }}>{COMPANY_INFO.email}</p>
+          <div className="text-sm">
+            <p className="mb-1">{COMPANY_INFO.kvk}</p>
+            <p className="mb-1">{COMPANY_INFO.address}</p>
+            <p className="mb-1">{COMPANY_INFO.postal} {COMPANY_INFO.city}</p>
+            <p className="mb-1">{COMPANY_INFO.phone}</p>
+            <p className="mb-1">{COMPANY_INFO.email}</p>
           </div>
         </div>
       </div>
@@ -190,39 +204,46 @@ export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, isPdf
       {/* Client Info */}
       <div className="mb-8">
         <h2 className="font-bold mb-2">FACTUUR AAN:</h2>
-        <p className="font-bold">{invoice.opdrachtgever_naam || '-'}</p>
-        <p>KVK: {invoice.kvk_nummer || '-'}</p>
-        <p>{invoice.adres || '-'}</p>
-        <p>{invoice.postcode || '-'}, {invoice.stad || '-'}</p>
-        <p>Tel: {invoice.telefoon || '-'}</p>
-        <p>Email: {invoice.email || '-'}</p>
+        <p className="font-bold">{invoice.opdrachtgever_naam}</p>
+        <p>KVK: {invoice.kvk_nummer}</p>
+        <p>{invoice.adres}</p>
+        <p>{invoice.postcode} {invoice.stad}</p>
+        <p>Tel: {invoice.telefoon}</p>
+        <p>Email: {invoice.email}</p>
+      </div>
+
+      {/* Invoice Details */}
+      <div className="mb-8">
+        <h2 className="font-bold mb-2">FACTUUR DETAILS:</h2>
+        <p>Periode: {formatDate(invoice.shift_date)} - {formatDate(invoice.shift_date_end)}</p>
+        <p>Locatie: {invoice.locatie}</p>
       </div>
 
       {/* Invoice Table */}
-      <table className="w-full mb-8">
-        <thead>
-          <tr className="border-b">
-            <th className="text-left py-2">UREN</th>
-            <th className="text-left py-2">LOCATIE</th>
-            <th className="text-left py-2">TARIEF</th>
-            <th className="text-left py-2">DATUM</th>
-            <th className="text-right py-2">TOTAAL</th>
-          </tr>
-        </thead>
-        <tbody>
-          {Object.entries(breakdown)
-            .filter(([_, data]) => data.hours > 0)
-            .map(([period, data], index) => (
-              <tr key={index} className="border-b">
-                <td className="py-2">{formatHours(data.hours)}</td>
-                <td className="py-2">{invoice.locatie || '-'}</td>
-                <td className="py-2">{formatCurrency(data.rate)}</td>
-                <td className="py-2">{formatDate(invoice.shift_date)}</td>
-                <td className="py-2 text-right">{formatCurrency(data.total)}</td>
+      <div className="mb-8">
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="border-b-2 border-gray-300">
+              <th className="text-left py-2 font-bold">UREN</th>
+              <th className="text-left py-2 font-bold">LOCATIE</th>
+              <th className="text-left py-2 font-bold">TARIEF</th>
+              <th className="text-left py-2 font-bold">DATUM</th>
+              <th className="text-right py-2 font-bold">TOTAAL</th>
+            </tr>
+          </thead>
+          <tbody>
+            {shiftDetails.map((item, index) => (
+              <tr key={index} className="border-b border-gray-200">
+                <td className="py-2">{formatHours(item.uren)}</td>
+                <td className="py-2">{item.locatie}</td>
+                <td className="py-2">{formatCurrency(item.tarief)}</td>
+                <td className="py-2">{item.datum}</td>
+                <td className="py-2 text-right">{formatCurrency(item.totaal)}</td>
               </tr>
             ))}
-        </tbody>
-      </table>
+          </tbody>
+        </table>
+      </div>
 
       {/* Totals */}
       <div className="flex justify-end mb-8">
@@ -242,10 +263,17 @@ export const InvoiceTemplate: React.FC<InvoiceTemplateProps> = ({ invoice, isPdf
         </div>
       </div>
 
+      {/* Payment Details */}
+      <div className="mt-8 pt-8 border-t border-gray-300">
+        <h2 className="font-bold mb-2">BETALINGSGEGEVENS:</h2>
+        <p>Bank: {COMPANY_INFO.bankAccount}</p>
+        <p>Ten name van: {COMPANY_INFO.name}</p>
+        <p>Btw nummer: {COMPANY_INFO.btwNumber}</p>
+      </div>
+
       {/* Footer */}
-      <div className="text-center mt-12">
-        <h3 className="font-bold mb-2">BEDANKT VOOR UW KLANDIZIE</h3>
-        <p className="text-sm">Alle bedragen gelieve over te maken op rekeningnummer {COMPANY_INFO.bank}</p>
+      <div className="mt-8 text-center">
+        <p className="font-bold">BEDANKT VOOR UW KLANDIZIE</p>
       </div>
     </div>
   );
