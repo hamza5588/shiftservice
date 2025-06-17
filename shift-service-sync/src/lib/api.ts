@@ -430,22 +430,23 @@ export interface ChatMessageResponse {
 export const notificationsApi = {
   getUnreadCount: () => apiRequest<number>('/notifications/unread-count'),
   getChatHistory: (userId: string) => apiRequest<ChatMessageResponse[]>(`/notifications/chat/history/${userId}/`),
-  sendChatMessage: (data: ChatMessageCreate) => apiRequest<ChatMessageResponse>('/notifications/chat/send/', {
-    method: 'POST',
-    body: JSON.stringify(data)
-  }),
-  markAsRead: (messageId: number) => apiRequest<void>(`/notifications/chat/mark-read/${messageId}/`, {
-    method: 'POST'
-  }),
+  sendChatMessage: (data: ChatMessageCreate) => apiRequest<ChatMessageResponse>('/notifications/chat/send/', 'POST', data),
+  markAsRead: (messageId: number) => apiRequest<void>(`/notifications/chat/mark-read/${messageId}/`, 'POST'),
   connectToChat: (userId: string, onMessage: (message: ChatMessageResponse) => void) => {
     const token = localStorage.getItem('token');
     if (!token) {
       throw new Error('No authentication token found');
     }
 
-    // Encode the token to handle special characters
-    const encodedToken = encodeURIComponent(token);
-    const wsUrl = `${baseURL.replace('http', 'ws')}/notifications/ws/chat/${userId}?token=${encodedToken}`;
+    // Get the base URL from environment variables
+    const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    
+    // Convert http to ws and https to wss
+    const wsBaseURL = baseURL.replace(/^http/, 'ws');
+    
+    // Use the token as is, but ensure it's properly formatted
+    const cleanToken = token.trim();
+    const wsUrl = `${wsBaseURL}/notifications/ws/chat/${userId}?token=${cleanToken}`;
     console.log('Connecting to WebSocket:', wsUrl);
 
     const ws = new WebSocket(wsUrl);
@@ -495,6 +496,7 @@ export const notificationsApi = {
       console.log('WebSocket URL:', ws.url);
       console.log('User ID:', userId);
       console.log('Token present:', !!token);
+      console.log('Token value:', token ? `${token.substring(0, 20)}...` : 'none');
     };
 
     ws.onclose = (event) => {

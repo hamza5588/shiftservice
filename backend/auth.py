@@ -28,6 +28,15 @@ oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 # Email configuration
+# EMAIL_CONFIG = {
+#     'smtp_server': 'smtp.gmail.com',
+#     'smtp_port': 587,
+#     'username': 'y7hamzakhanswati@gmail.com',
+#     'password': 'cama vrpz xowp ziax',
+#     'from_email': 'y7hamzakhanswati@gmail.com',
+#     'from_name': 'Secufy Boekhouding'
+# }
+
 EMAIL_CONFIG = {
     'smtp_server': 'smtp.gmail.com',
     'smtp_port': 587,

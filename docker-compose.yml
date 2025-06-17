@@ -62,6 +62,7 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_URL: "http://209.23.8.75:8000"
+        VITE_BASE_URL: "http://209.23.8.75"
     container_name: planner_frontend
     depends_on:
       - backend

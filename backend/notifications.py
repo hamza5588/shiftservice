@@ -80,116 +80,125 @@ async def chat_websocket(
     try:
         print(f"WebSocket connection attempt for user {user_id}")
         print(f"Token provided: {'Yes' if token else 'No'}")
+        print(f"Full token: {token}")
 
         if not token:
             print("No token provided")
             await websocket.close(code=4000, reason="No authentication token provided")
             return
 
-        # Decode the URL-encoded token
-        try:
-            decoded_token = unquote(token)
-            print("Token decoded successfully")
-        except Exception as e:
-            print(f"Error decoding token: {str(e)}")
-            await websocket.close(code=4000, reason="Invalid token format")
-            return
-
         # Verify the token and get the current user
         try:
-            # Decode the token manually since we're not using oauth2_scheme
+            # Decode the token
             try:
-                payload = jwt.decode(decoded_token, SECRET_KEY, algorithms=[ALGORITHM])
-                username = payload.get("sub")
+                print(f"Attempting to decode token: {token[:20]}...")
+                print(f"Using SECRET_KEY: {SECRET_KEY}")
+                print(f"Using ALGORITHM: {ALGORITHM}")
+                
+                payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+                print(f"Token payload: {payload}")
+                
+                username: str = payload.get("sub")
                 if username is None:
-                    raise HTTPException(status_code=401, detail="Invalid token")
+                    print("No username in token payload")
+                    await websocket.close(code=4001, reason="Invalid token payload")
+                    return
+                
+                print(f"Username from token: {username}")
+
+                # Get the user from the database
+                db = next(get_db())
+                user = db.query(User).filter(User.username == username).first()
+                
+                if not user:
+                    print(f"No user found for username: {username}")
+                    await websocket.close(code=4001, reason="User not found")
+                    return
+
+                # Get the user ID and ensure it's a string
+                current_user_id = str(user.id)
+                print(f"Current user ID: {current_user_id}")
+                print(f"Requested user ID: {user_id}")
+                
+                # Compare the user IDs
+                if current_user_id != user_id:
+                    print(f"User ID mismatch: {current_user_id} != {user_id}")
+                    await websocket.close(code=4003, reason="Not authorized")
+                    return
+                
+                print("Authentication successful, accepting WebSocket connection")
+                await chat_manager.connect(websocket, current_user_id)
+                
+                try:
+                    while True:
+                        data = await websocket.receive_json()
+                        print(f"Received message: {data}")
+                        
+                        # Handle incoming chat messages
+                        if data.get("type") == "message":
+                            message = data.get("content")
+                            receiver_id = data.get("receiver_id")
+                            shift_id = data.get("shift_id")
+                            
+                            # Store message in database
+                            db_message = ChatMessage(
+                                sender_id=int(current_user_id),
+                                receiver_id=int(receiver_id),
+                                content=message,
+                                shift_id=shift_id
+                            )
+                            db.add(db_message)
+                            db.commit()
+                            db.refresh(db_message)
+                            
+                            # Get sender's name
+                            sender = db.query(User).filter(User.id == current_user_id).first()
+                            sender_name = sender.full_name if sender else "Unknown"
+                            
+                            # Prepare message response
+                            message_response = {
+                                "type": "message",
+                                "id": db_message.id,
+                                "sender_id": current_user_id,
+                                "receiver_id": receiver_id,
+                                "content": message,
+                                "timestamp": db_message.timestamp.isoformat(),
+                                "shift_id": shift_id,
+                                "sender_name": sender_name
+                            }
+                            
+                            print(f"Sending message response: {message_response}")
+                            
+                            # Send to receiver if online
+                            await chat_manager.send_personal_message(message_response, str(receiver_id))
+                            # Send back to sender for confirmation
+                            await chat_manager.send_personal_message(message_response, current_user_id)
+                            
+                except WebSocketDisconnect:
+                    print(f"WebSocket disconnected for user {current_user_id}")
+                    chat_manager.disconnect(current_user_id)
+                except Exception as e:
+                    print(f"Error in WebSocket connection: {str(e)}")
+                    await websocket.close(code=1011, reason="Internal server error")
+                    
             except JWTError as e:
                 print(f"JWT decode error: {str(e)}")
+                print(f"Error type: {type(e)}")
+                print(f"Error details: {e.__dict__}")
                 await websocket.close(code=4001, reason="Invalid token")
                 return
-
-            # Get the user from the database
-            db = next(get_db())
-            user = db.query(User).filter(User.username == username).first()
-            
-            if not user:
-                print(f"No user found for username: {username}")
-                await websocket.close(code=4001, reason="User not found")
-                return
-
-            # Get the user ID and ensure it's a string
-            current_user_id = str(user.id)
-            print(f"Current user ID: {current_user_id}")
-            print(f"Requested user ID: {user_id}")
-            
-            # Compare the user IDs
-            if current_user_id != user_id:
-                print(f"User ID mismatch: {current_user_id} != {user_id}")
-                await websocket.close(code=4003, reason="Not authorized")
-                return
-            
-            print("Authentication successful, accepting WebSocket connection")
-            await chat_manager.connect(websocket, current_user_id)
-            
-            try:
-                while True:
-                    data = await websocket.receive_json()
-                    print(f"Received message: {data}")
-                    
-                    # Handle incoming chat messages
-                    if data.get("type") == "message":
-                        message = data.get("content")
-                        receiver_id = data.get("receiver_id")
-                        shift_id = data.get("shift_id")
-                        
-                        # Store message in database
-                        db_message = ChatMessage(
-                            sender_id=int(current_user_id),
-                            receiver_id=int(receiver_id),
-                            content=message,
-                            shift_id=shift_id
-                        )
-                        db.add(db_message)
-                        db.commit()
-                        db.refresh(db_message)
-                        
-                        # Get sender's name
-                        sender = db.query(User).filter(User.id == current_user_id).first()
-                        sender_name = sender.full_name if sender else "Unknown"
-                        
-                        # Prepare message response
-                        message_response = {
-                            "type": "message",
-                            "id": db_message.id,
-                            "sender_id": current_user_id,
-                            "receiver_id": receiver_id,
-                            "content": message,
-                            "timestamp": db_message.timestamp.isoformat(),
-                            "shift_id": shift_id,
-                            "sender_name": sender_name
-                        }
-                        
-                        print(f"Sending message response: {message_response}")
-                        
-                        # Send to receiver if online
-                        await chat_manager.send_personal_message(message_response, str(receiver_id))
-                        # Send back to sender for confirmation
-                        await chat_manager.send_personal_message(message_response, current_user_id)
-                        
-            except WebSocketDisconnect:
-                print(f"WebSocket disconnected for user {current_user_id}")
-                chat_manager.disconnect(current_user_id)
-            except Exception as e:
-                print(f"Error in WebSocket connection: {str(e)}")
-                await websocket.close(code=1011, reason="Internal server error")
                 
         except Exception as e:
             print(f"Authentication error: {str(e)}")
+            print(f"Error type: {type(e)}")
+            print(f"Error details: {e.__dict__}")
             await websocket.close(code=4001, reason="Invalid authentication token")
             return
             
     except Exception as e:
         print(f"Error in WebSocket authentication: {str(e)}")
+        print(f"Error type: {type(e)}")
+        print(f"Error details: {e.__dict__}")
         await websocket.close(code=4000, reason="Authentication failed")
 
 @router.post("/chat/send", response_model=ChatMessageResponse)

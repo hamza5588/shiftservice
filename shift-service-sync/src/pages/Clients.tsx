@@ -34,6 +34,9 @@ interface Opdrachtgever {
   email: string;
 }
 
+// Use the API URL from environment variables
+const API_URL = import.meta.env.VITE_API_URL;
+
 export default function Clients() {
   const { user } = useAuth();
   const navigate = useNavigate();
@@ -62,14 +65,21 @@ export default function Clients() {
 
   const fetchClients = async () => {
     try {
-      const response = await fetch('/opdrachtgevers/', {
+      console.log('Fetching from:', `${API_URL}/opdrachtgevers/`);
+      const response = await fetch(`${API_URL}/opdrachtgevers/`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
         }
       });
+      
       if (!response.ok) {
-        throw new Error('Failed to fetch clients');
+        const text = await response.text();
+        console.error('Error response:', text);
+        throw new Error(`Failed to fetch clients: ${response.status} ${response.statusText}`);
       }
+      
       const data = await response.json();
       setClients(data);
     } catch (error) {
@@ -82,20 +92,25 @@ export default function Clients() {
     e.preventDefault();
     try {
       const url = selectedClient
-        ? `/opdrachtgevers/${selectedClient.id}`
-        : '/opdrachtgevers/';
+        ? `${API_URL}/opdrachtgevers/${selectedClient.id}`
+        : `${API_URL}/opdrachtgevers/`;
       const method = selectedClient ? 'PUT' : 'POST';
 
       const response = await fetch(url, {
         method,
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Accept': 'application/json'
         },
         body: JSON.stringify(formData),
       });
 
-      if (!response.ok) throw new Error('Failed to save client');
+      if (!response.ok) {
+        const text = await response.text();
+        console.error('Error response:', text);
+        throw new Error(`Failed to save client: ${response.status} ${response.statusText}`);
+      }
 
       toast.success(
         selectedClient ? 'Client updated successfully' : 'Client created successfully'
@@ -113,7 +128,7 @@ export default function Clients() {
     if (!window.confirm('Are you sure you want to delete this client?')) return;
 
     try {
-      const response = await fetch(`/opdrachtgevers/${id}`, {
+      const response = await fetch(`${API_URL}/opdrachtgevers/${id}`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`

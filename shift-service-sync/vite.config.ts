@@ -10,10 +10,10 @@ export default defineConfig(({ mode }) => ({
     port: 8080,
     strictPort: true,
     proxy: {
-      '/api': {
+      '/opdrachtgevers': {
         target: 'http://localhost:8000',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, '')
+        secure: false
       }
     }
   },

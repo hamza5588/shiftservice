@@ -16,6 +16,7 @@ RUN pip install --no-cache-dir openpyxl
 RUN pip install --no-cache-dir APScheduler==3.11.0
 RUN pip install --no-cache-dir holidays==0.68
 RUN pip install --no-cache-dir PyJWT==2.3.0
+RUN pip install --no-cache-dir websockets
 # Copy the rest of the application
 COPY . .
 

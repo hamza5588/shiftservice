@@ -176,22 +176,20 @@ const Messages = () => {
 
   const shouldShowEmployee = (emp: Employee | UserType) => {
     if (!user?.username || !emp?.username) return false;
-    const notSelf = emp.username !== user.username;
+    
+    // Don't show own account
+    if (emp.username === user.username) return false;
+    
     const isCurrentUserAdminOrPlanner = user.roles?.includes('admin') || user.roles?.includes('planner');
     const isTargetAdminOrPlanner = emp.roles?.includes('admin') || emp.roles?.includes('planner');
     
     // If current user is admin/planner, show all users except self
     if (isCurrentUserAdminOrPlanner) {
-      return notSelf;
+      return true;
     }
     
-    // If current user is employee, show all admin/planner users
-    if (isTargetAdminOrPlanner) {
-      return notSelf;
-    }
-    
-    // For employee-to-employee chat, show all employees except self
-    return notSelf;
+    // If current user is employee, only show admin/planner users
+    return isTargetAdminOrPlanner;
   };
 
   // Combine users and employees, removing duplicates by username
@@ -268,6 +266,7 @@ const Messages = () => {
       });
     },
     onError: (error) => {
+      console.error('Error sending message:', error);
       toast({
         title: "Error",
         description: "Failed to send message",
@@ -278,43 +277,45 @@ const Messages = () => {
 
   // Set up WebSocket connection when user changes
   useEffect(() => {
-    if (user?.id) {
-      try {
-        console.log('Setting up WebSocket connection for user:', user);
-        // Ensure we're using the numeric ID from the database
-        const userId = String(user.id);
-        if (!userId || userId === 'undefined') {
-          throw new Error('Invalid user ID');
-        }
-        console.log('User ID for WebSocket:', userId);
-        
-        // Get the token
-        const token = localStorage.getItem('token');
-        if (!token) {
-          throw new Error('No authentication token found');
-        }
-        console.log('Token found:', token ? 'Yes' : 'No');
-        
-        // Connect to WebSocket
-        const ws = notificationsApi.connectToChat(userId, handleNewMessage);
-        setWsConnection(ws);
+    if (!user?.id) return;
 
-        return () => {
-          if (ws && ws.readyState === WebSocket.OPEN) {
-            console.log('Closing WebSocket connection');
-            ws.close();
+    try {
+      const ws = connectToChat(user.id.toString());
+      
+      ws.onopen = () => {
+        console.log('WebSocket connection established');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          console.log('Received message:', message);
+          
+          // Handle different message types
+          if (message.type === 'message') {
+            // Add the message to the chat history
+            handleNewMessage(message);
           }
-        };
-      } catch (error) {
-        console.error('Failed to establish WebSocket connection:', error);
-        toast({
-          title: "Connection Error",
-          description: "Failed to establish chat connection. Please try refreshing the page.",
-          variant: "destructive",
-        });
-      }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+
+      ws.onclose = (event) => {
+        console.log('WebSocket connection closed:', event.code, event.reason);
+      };
+
+      return () => {
+        ws.close();
+      };
+    } catch (error) {
+      console.error('Error setting up WebSocket:', error);
     }
-  }, [user]);
+  }, [user?.id]);
 
   // Reset unread count when selecting a chat
   const handleSelectChat = (chatId: string) => {
