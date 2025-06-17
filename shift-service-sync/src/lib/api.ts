@@ -1,13 +1,14 @@
 import { Shift, ServiceRequest, Employee, Invoice, PayrollEntry, DashboardStats, CreateInvoicePayload, Location, Opdrachtgever, LocationRate, LocationRateCreate, EmployeeDashboardData, Role, User } from './types';
 import axios from 'axios';
-import { API_BASE_URL } from '../config/api';
 
-const baseURL = API_BASE_URL;
+// Use proxy in development mode
+const baseURL = import.meta.env.DEV ? '/api' : import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export const api = axios.create({
   baseURL,
   headers: {
     'Content-Type': 'application/json',
+    'Accept': 'application/json'
   },
 });
 
@@ -62,7 +63,7 @@ export async function apiRequest<T>(
   }
 
   try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, config);
+    const response = await fetch(`${baseURL}${endpoint}`, config);
     const responseData = await response.json();
 
     if (!response.ok) {
@@ -311,7 +312,7 @@ export const locationRatesApi = {
       }
 
       // Use the exact endpoint format from the FastAPI router
-      const response = await fetch(`${API_BASE_URL}/location-rates/`, {
+      const response = await fetch(`${baseURL}/location-rates/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
