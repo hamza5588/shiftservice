@@ -16,6 +16,7 @@ from email.mime.multipart import MIMEMultipart
 import secrets
 import string
 import re
+import os
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -387,7 +388,10 @@ def send_reset_email(email: str, token: str):
         msg['To'] = email
         msg['Subject'] = "Password Reset Request"
 
-        reset_link = f"http://localhost:8080/reset-password?token={token}"
+        # Use environment variable for base URL, fallback to localhost for development
+        base_url = os.getenv('FRONTEND_URL', 'http://localhost:8080')
+        reset_link = f"{base_url}/reset-password?token={token}"
+        
         body = f"""
         Hello,
 
