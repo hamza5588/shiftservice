@@ -3,16 +3,12 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 import os
 
-# Database connection settings
-DB_USER = os.getenv("DB_USER", "planner_user")
-DB_PASSWORD = os.getenv("DB_PASSWORD", "planner_password")
-DB_HOST = os.getenv("DB_HOST", "localhost")  # Use localhost for local development
-DB_PORT = os.getenv("DB_PORT", "3306")
-DB_NAME = os.getenv("DB_NAME", "planner_db")
+# Get database URL from environment variable
+DATABASE_URL = os.getenv("DATABASE_URL", "mysql+pymysql://planner_user:planner_password@localhost:3306/planner_db")
 
 # Create SQLAlchemy engine using PyMySQL
 engine = create_engine(
-    f"mysql+pymysql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}",
+    DATABASE_URL,
     echo=True
 )
 
