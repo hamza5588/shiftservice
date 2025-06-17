@@ -399,7 +399,7 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
   const { data: clients, isLoading: isLoadingClients } = useQuery({
     queryKey: ['clients'],
     queryFn: async () => {
-      const response = await fetch('/api/opdrachtgevers/', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/opdrachtgevers/`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -416,7 +416,7 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
     queryKey: ['locations', selectedClientId],
     queryFn: async () => {
       if (!selectedClientId) return [];
-      const response = await fetch(`/api/locations/opdrachtgever/${selectedClientId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/locations/opdrachtgever/${selectedClientId}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -454,11 +454,21 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Only validate the most essential fields
-    if (!shift.shift_date || !shift.start_time || !shift.end_time || !shift.location_id) {
+    // Debug log to see what values we have
+    console.log('Current shift data:', shift);
+    
+    // Check each required field individually
+    const missingFields = [];
+    if (!shift.shift_date) missingFields.push('date');
+    if (!shift.start_time) missingFields.push('start time');
+    if (!shift.end_time) missingFields.push('end time');
+    if (!shift.location_id) missingFields.push('location');
+    if (!shift.title) missingFields.push('title');
+
+    if (missingFields.length > 0) {
       toast({
         title: "Validation Error",
-        description: "Please fill in the date, time, and location",
+        description: `Please fill in the following required fields: ${missingFields.join(', ')}`,
         variant: "destructive",
       });
       return;
@@ -470,23 +480,32 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
       start_time: shift.start_time,
       end_time: shift.end_time,
       location_id: shift.location_id,
-      employee_id: shift.employee_id || null,
+      title: shift.title,
       status: shift.status || 'open',
-      title: shift.title || '',
+      employee_id: shift.employee_id || null,
+      reiskilometers: shift.reiskilometers || 0,
+      required_profile: shift.required_profile || null,
       stad: shift.stad || null,
       provincie: shift.provincie || null,
-      adres: shift.adres || null,
-      required_profile: shift.required_profile || null,
-      reiskilometers: shift.reiskilometers || 0
+      adres: shift.adres || null
     };
+
+    // Debug log to see what we're sending to the API
+    console.log('Submitting shift data:', formattedShift);
 
     // Submit to the API
     createShift(formattedShift as Omit<Shift, 'id'>);
   };
 
   const handleChange = (field: string, value: any) => {
+    console.log(`Updating field ${field} with value:`, value);
     setShift(prev => ({ ...prev, [field]: value }));
   };
+
+  // Add useEffect to log shift state changes
+  useEffect(() => {
+    console.log('Shift state updated:', shift);
+  }, [shift]);
 
   const handleClientChange = (clientId: string) => {
     setSelectedClientId(clientId);
@@ -664,11 +683,11 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
 
             {/* Title */}
             <div className="space-y-2">
-              <Label htmlFor="titel">Title *</Label>
+              <Label htmlFor="title">Title *</Label>
               <Input
-                id="titel"
+                id="title"
                 required
-                onChange={(e) => handleChange('titel', e.target.value)}
+                onChange={(e) => handleChange('title', e.target.value)}
               />
             </div>
 
@@ -786,7 +805,7 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
   const { data: clients, isLoading: isLoadingClients } = useQuery({
     queryKey: ['clients'],
     queryFn: async () => {
-      const response = await fetch('/api/opdrachtgevers/', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/opdrachtgevers/`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -803,7 +822,7 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
     queryKey: ['locations', clientId],
     queryFn: async () => {
       if (!clientId) return [];
-      const response = await fetch(`/api/locations/opdrachtgever/${clientId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/locations/opdrachtgever/${clientId}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -852,7 +871,7 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
     if (!shift.shift_date || !shift.start_time || !shift.end_time || !shift.location_id || !shift.title) {
       toast({
         title: "Validation Error",
-        description: "Please fill in all required fields",
+        description: "Please fill in all required fields (date, time, location, and title)",
         variant: "destructive",
       });
       return;
@@ -1177,7 +1196,7 @@ function BulkShiftDialog({ open, onOpenChange, onSuccess }: BulkShiftDialogProps
   const { data: clients, isLoading: isLoadingClients } = useQuery<Client[]>({
     queryKey: ['clients'],
     queryFn: async () => {
-      const response = await fetch('/api/opdrachtgevers/', {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/opdrachtgevers/`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
@@ -1194,7 +1213,7 @@ function BulkShiftDialog({ open, onOpenChange, onSuccess }: BulkShiftDialogProps
     queryKey: ['locations', selectedClientId],
     queryFn: async () => {
       if (!selectedClientId) return [];
-      const response = await fetch(`/api/locations/opdrachtgever/${selectedClientId}`, {
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/locations/opdrachtgever/${selectedClientId}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }

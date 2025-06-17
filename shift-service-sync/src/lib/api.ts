@@ -1,8 +1,8 @@
 import { Shift, ServiceRequest, Employee, Invoice, PayrollEntry, DashboardStats, CreateInvoicePayload, Location, Opdrachtgever, LocationRate, LocationRateCreate, EmployeeDashboardData, Role, User } from './types';
 import axios from 'axios';
 
-// Use proxy in development mode
-const baseURL = import.meta.env.DEV ? '/api' : import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// Use environment variable for API URL, fallback to localhost for development
+const baseURL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 export const api = axios.create({
   baseURL,
@@ -10,6 +10,7 @@ export const api = axios.create({
     'Content-Type': 'application/json',
     'Accept': 'application/json'
   },
+  withCredentials: true
 });
 
 // Add request interceptor to include auth token
@@ -30,106 +31,61 @@ api.interceptors.response.use(
       localStorage.removeItem('token');
       window.location.href = '/login';
     }
+    // Log the error for debugging
+    console.error('API Error:', {
+      url: error.config?.url,
+      method: error.config?.method,
+      status: error.response?.status,
+      data: error.response?.data,
+      headers: error.config?.headers
+    });
     return Promise.reject(error);
   }
 );
 
-export async function apiRequest<T>(
-  endpoint: string,
-  method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET',
-  data?: any,
-  requiresAuth: boolean = true
-): Promise<T> {
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-  };
-
-  if (requiresAuth) {
-    const token = localStorage.getItem('token');
-    if (!token) {
-      throw new Error('No authentication token found');
-    }
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
-  const config: RequestInit = {
-    method,
-    headers,
-    credentials: 'include',
-  };
-
-  if (data) {
-    config.body = JSON.stringify(data);
-  }
-
+// Helper function for making API requests
+export const apiRequest = async <T>(endpoint: string, method: string = 'GET', data?: any): Promise<T> => {
   try {
-    const response = await fetch(`${baseURL}${endpoint}`, config);
-    const responseData = await response.json();
+    // Remove /api prefix if it exists
+    const cleanEndpoint = endpoint.startsWith('/api') ? endpoint.substring(4) : endpoint;
+    
+    const response = await fetch(`${baseURL}${cleanEndpoint}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${localStorage.getItem('token')}`
+      },
+      credentials: 'include',
+      body: data ? JSON.stringify(data) : undefined
+    });
 
     if (!response.ok) {
-      console.error('Error response data:', responseData);
-      
-      // Log detailed error information
-      console.error('API Error Details:', {
+      const errorText = await response.text();
+      console.error('API Error Response:', {
         status: response.status,
         statusText: response.statusText,
-        errorData: responseData,
-        endpoint,
-        method,
-        requestData: data
+        url: response.url,
+        body: errorText
       });
-
-      let errorMessage = 'An error occurred';
-
-      // Handle different error response formats
-      if (responseData.detail) {
-        if (typeof responseData.detail === 'string') {
-          errorMessage = responseData.detail;
-        } else if (Array.isArray(responseData.detail)) {
-          errorMessage = responseData.detail.join(', ');
-        } else if (typeof responseData.detail === 'object') {
-          // Handle field-specific errors
-          const fieldErrors = Object.entries(responseData.detail)
-            .map(([field, errors]) => `${field}: ${Array.isArray(errors) ? errors.join(', ') : errors}`)
-            .join('; ');
-          errorMessage = fieldErrors || 'Validation error';
-        }
-      } else if (responseData.message) {
-        errorMessage = responseData.message;
-      } else if (responseData.error) {
-        errorMessage = responseData.error;
-      }
-
-      // Create a custom error with the message
-      const error = new Error(errorMessage);
-      // Add additional properties to the error object
-      (error as any).status = response.status;
-      (error as any).responseData = responseData;
-      throw error;
+      throw new Error(`API request failed: ${response.status} ${response.statusText}`);
     }
 
+    const responseData = await response.json();
     return responseData;
   } catch (error) {
     console.error('API request error:', error);
     throw error;
   }
-}
+};
 
 // API functions for shifts
 export const shiftsApi = {
   getAll: () => apiRequest<Shift[]>('/planning/'),
   getById: (id: number) => apiRequest<Shift>(`/planning/${id}`),
-  create: (shift: Omit<Shift, 'id'>) => apiRequest<Shift>('/planning/', {
-    method: 'POST',
-    body: JSON.stringify(shift)
-  }),
-  update: (id: number, shift: Partial<Shift>) => apiRequest<Shift>(`/planning/${id}/`, {
-    method: 'PUT',
-    body: JSON.stringify(shift)
-  }),
-  delete: (id: number) => apiRequest<void>(`/planning/${id}/`, {
-    method: 'DELETE'
-  }),
+  create: (shift: Omit<Shift, 'id'>) => apiRequest<Shift>('/planning/', 'POST', shift),
+  update: (id: number, shift: Partial<Shift>) => apiRequest<Shift>(`/planning/${id}/`, 'PUT', shift),
+  delete: (id: number) => apiRequest<void>(`/planning/${id}/`, 'DELETE'),
   getMyShift: (id: number) => apiRequest<Shift>(`/planning/my-shifts/${id}/`)
 };
 
