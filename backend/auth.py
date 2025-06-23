@@ -388,7 +388,7 @@ def send_reset_email(email: str, token: str):
         msg['To'] = email
         msg['Subject'] = "Password Reset Request"
 
-        # Use environment variable for base URL, fallback to localhost for development
+        # Always use the production URL
         base_url = "http://209.23.8.75:8080"
         reset_link = f"{base_url}/reset-password?token={token}"
         
