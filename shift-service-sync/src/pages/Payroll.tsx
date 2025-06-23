@@ -181,7 +181,7 @@ export default function Payroll() {
             ) : Object.values(payrollByEmployee).length > 0 ? (
               <>
                 {Object.values(payrollByEmployee).map((employee) => (
-                  <TableRow key={employee.employee_id}>
+                  <TableRow key={employee.id}>
                     <TableCell>{employee.employee_name}</TableCell>
                     <TableCell className="text-right">{employee.total_hours}</TableCell>
                     <TableCell className="text-right">

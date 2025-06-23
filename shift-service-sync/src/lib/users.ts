@@ -22,13 +22,8 @@ export const usersApi = {
   },
   getById: (id: string) => apiRequest<User>(`/users/${id}`),
   create: (user: CreateUserData) => apiRequest<User>('/users/', 'POST', user),
-  update: (id: string, user: UpdateUserData) => apiRequest<User>(`/users/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(user)
-  }),
-  delete: (id: string) => apiRequest<void>(`/users/${id}`, {
-    method: 'DELETE'
-  }),
+  update: (id: string, user: UpdateUserData) => apiRequest<User>(`/users/${id}`, 'PUT', user),
+  delete: (id: string) => apiRequest<void>(`/users/${id}`, 'DELETE'),
   getCurrentUser: () => apiRequest<User>('/users/me'),
   getRoles: () => apiRequest<string[]>('/roles/'),
 }; 

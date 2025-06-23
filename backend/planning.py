@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from datetime import date, time, datetime, timedelta
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from database import get_db
 from models import Shift as DBShift, User, Location, AutoApproval
 from auth import get_current_user, require_roles
@@ -378,34 +379,28 @@ async def get_available_shifts(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get all available shifts that employees can request."""
+    """Get all available shifts that employees can request (unassigned or assigned to current user)."""
     try:
         print(f"Current user: {current_user}")
-        
-        # Check if current_user has the roles attribute
         if not hasattr(current_user, 'roles'):
             print("Current user does not have roles attribute")
             raise HTTPException(
                 status_code=403, 
                 detail="User does not have required permissions"
             )
-            
         print(f"User roles: {current_user.roles}")
-        
-        # Check if user has any role that can view shifts
         user_roles = [role.name for role in current_user.roles] if hasattr(current_user.roles, '__iter__') else []
         if not any(role in user_roles for role in ["employee", "planner", "admin"]):
             raise HTTPException(
                 status_code=403, 
                 detail="You don't have permission to view available shifts"
             )
-        
-        # Get all shifts that are either open or pending
+        # Show shifts that are open or pending and either unassigned or assigned to the current user
         db_shifts = db.query(DBShift).filter(
-            DBShift.status.in_(["open", "pending"])
+            DBShift.status.in_(["open", "pending"]),
+            or_(DBShift.medewerker_id == None, DBShift.medewerker_id == current_user.username)
         ).all()
-        
-        print(f"Found {len(db_shifts)} shifts")
+        print(f"Found {len(db_shifts)} available (unassigned or assigned to current user) shifts")
         
         # Convert SQLAlchemy models to Pydantic models for response
         shifts = []
@@ -443,8 +438,8 @@ async def get_available_shifts(
                     "required_profile": db_shift.required_profile,
                     "location": db_shift.locatie,
                     "location_details": location_details,
-                    "reiskilometers": None,  # Default value for missing field
-                    "assigned_by_admin": None  # Default value for missing field
+                    "reiskilometers": getattr(db_shift, 'reiskilometers', None),
+                    "assigned_by_admin": getattr(db_shift, 'assigned_by_admin', None)
                 }
                 
                 print(f"Converting shift data: {shift_data}")
@@ -540,7 +535,7 @@ async def update_shift(
 
     if shift_update.employee_id:
         # Check if employee exists
-        employee = db.query(User).filter(User.id == shift_update.employee_id).first()
+        employee = db.query(User).filter(User.username == shift_update.employee_id).first()
         if not employee:
             raise HTTPException(status_code=404, detail="Medewerker niet gevonden")
         # Use the employee's username as the medewerker_id

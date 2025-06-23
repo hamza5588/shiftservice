@@ -34,6 +34,12 @@ class Dienstaanvraag(BaseModel):
         orm_mode = True
 
 
+# Add a creation schema for incoming requests
+class DienstaanvraagCreate(BaseModel):
+    shift_id: int
+    notes: Optional[str] = None
+
+
 @router.get("/", response_model=List[Dienstaanvraag])
 async def get_dienstaanvragen(
     current_user: User = Depends(get_current_user),
@@ -190,7 +196,7 @@ async def get_my_request(
 
 @router.post("/", response_model=Dienstaanvraag, status_code=201)
 async def create_dienstaanvraag(
-    aanvraag: Dienstaanvraag,
+    aanvraag: DienstaanvraagCreate,  # <-- use the creation schema here
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -230,7 +236,7 @@ async def create_dienstaanvraag(
         existing_request = db.query(DBDienstaanvraag).filter(
             DBDienstaanvraag.shift_id == aanvraag.shift_id,
             DBDienstaanvraag.employee_id == current_user.username,
-            DBDienstaanvraag.status.in_(["requested", "approved"])  # Check for both requested and approved
+            DBDienstaanvraag.status.in_(["requested", "approved"])
         ).first()
         if existing_request:
             raise HTTPException(status_code=400, detail="You already have an active request for this shift")

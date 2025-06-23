@@ -40,6 +40,9 @@ const EditShift = () => {
     queryFn: employeesApi.getAll,
   });
 
+  // Debug: Log the employees data
+  console.log('Loaded employees:', employees);
+
   // Update filtered locations when client changes
   useEffect(() => {
     if (formData.opdrachtgever_id) {
@@ -90,14 +93,16 @@ const EditShift = () => {
         // Ensure required fields are not null
         title: formData.title || '',
         location_id: formData.location_id || 0,
-        opdrachtgever_id: formData.opdrachtgever_id || 0,
         status: formData.status || 'open',
         required_profile: formData.required_profile || '',
-        titel: formData.title || '',
         stad: formData.stad || '',
         provincie: formData.provincie || '',
         adres: formData.adres || ''
       };
+
+      // Debug: Log the data being sent
+      console.log('Sending shift update data:', formattedData);
+      console.log('Employee ID being sent:', formattedData.employee_id);
 
       // Validate required fields
       if (!formattedData.shift_date || !formattedData.start_time || !formattedData.end_time) {
@@ -226,7 +231,10 @@ const EditShift = () => {
                   <SelectContent>
                     <SelectItem value="unassigned">Unassigned</SelectItem>
                     {employees.map((employee) => (
-                      <SelectItem key={employee.id} value={employee.username}>
+                      <SelectItem 
+                        key={`employee-${employee.id}`} 
+                        value={employee.username}
+                      >
                         {employee.naam}
                       </SelectItem>
                     ))}
@@ -255,11 +263,18 @@ const EditShift = () => {
 
               <div className="space-y-2">
                 <Label htmlFor="required_profile">Required Profile</Label>
-                <Input
-                  id="required_profile"
+                <Select
                   value={formData.required_profile || ''}
-                  onChange={(e) => setFormData({ ...formData, required_profile: e.target.value })}
-                />
+                  onValueChange={(value) => setFormData({ ...formData, required_profile: value })}
+                >
+                  <SelectTrigger id="required_profile">
+                    <SelectValue placeholder="Select required profile" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Blue Pass">Blue Pass</SelectItem>
+                    <SelectItem value="Grey Pass">Grey Pass</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
@@ -282,4 +297,4 @@ const EditShift = () => {
   );
 };
 
-export default EditShift; 
+export default EditShift;

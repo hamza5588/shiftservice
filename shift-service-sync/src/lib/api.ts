@@ -95,58 +95,38 @@ export const serviceRequestsApi = {
   getMyRequests: () => apiRequest<ServiceRequest[]>('/dienstaanvragen/my-requests/'),
   getAvailableShifts: () => apiRequest<Shift[]>('/planning/available-shifts'),
   create: (data: Partial<ServiceRequest>) => 
-    apiRequest<ServiceRequest>('/dienstaanvragen/', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
+    apiRequest<ServiceRequest>('/dienstaanvragen/', 'POST', data),
   update: (id: number, data: Partial<ServiceRequest>) =>
-    apiRequest<ServiceRequest>(`/dienstaanvragen/${id}/`, {
-      method: 'PUT',
-      body: JSON.stringify(data),
-    }),
+    apiRequest<ServiceRequest>(`/dienstaanvragen/${id}/`, 'PUT', data),
   delete: (id: number) =>
-    apiRequest<void>(`/dienstaanvragen/${id}/`, {
-      method: 'DELETE',
-    }),
+    apiRequest<void>(`/dienstaanvragen/${id}/`, 'DELETE'),
   approve: (id: number) =>
-    apiRequest<ServiceRequest>(`/dienstaanvragen/${id}/approve/`, {
-      method: 'POST',
-    }),
+    apiRequest<ServiceRequest>(`/dienstaanvragen/${id}/approve/`, 'POST'),
   reject: (id: number) =>
-    apiRequest<ServiceRequest>(`/dienstaanvragen/${id}/reject/`, {
-      method: 'POST',
-    }),
+    apiRequest<ServiceRequest>(`/dienstaanvragen/${id}/reject/`, 'POST'),
 };
 
 // API functions for employees
 export const employeesApi = {
-  getAll: () => apiRequest<Employee[]>('/employee_profiles/'),
+  getAll: () => apiRequest<Employee[]>('/medewerkers/'),
   getById: (id: string) => {
     if (!id || id === 'undefined') {
       throw new Error('Employee ID is required');
     }
     return apiRequest<Employee>(`/employee_profiles/${id}`);
   },
-  create: (employee: Omit<Employee, 'id'>) => apiRequest<Employee>('/employee_profiles/', {
-      method: 'POST',
-      body: JSON.stringify(employee)
-    }),
+  create: (employee: Omit<Employee, 'id'>) => apiRequest<Employee>('/employee_profiles/', 'POST', employee),
   update: (id: string, employee: Partial<Employee>) => {
     if (!id || id === 'undefined') {
       throw new Error('Employee ID is required');
     }
-    return apiRequest<Employee>(`/employee_profiles/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(employee)
-    });
+    return apiRequest<Employee>(`/employee_profiles/${id}`, 'PUT', employee);
   },
   delete: (id: string) => {
     if (!id || id === 'undefined') {
       throw new Error('Employee ID is required');
     }
-    return apiRequest<void>(`/employee_profiles/${id}`, {
-      method: 'DELETE'
-    });
+    return apiRequest<void>(`/employee_profiles/${id}`, 'DELETE');
   },
   getMyProfile: () => apiRequest<Employee>('/employee_profiles/my-profile'),
 };
@@ -156,40 +136,20 @@ export const invoicesApi = {
   getAll: () => apiRequest<Invoice[]>('/facturen'),
   getById: (id: number) => apiRequest<Invoice>(`/facturen/${id}`),
   getByNumber: (number: string) => apiRequest<Invoice>(`/facturen/nummer/${number}`),
-  create: (data: CreateInvoicePayload) => apiRequest<Invoice>('/facturen', {
-    method: 'POST',
-    body: JSON.stringify(data)
-  }),
-  update: (id: number, data: Partial<Invoice>) => apiRequest<Invoice>(`/facturen/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data)
-  }),
-  delete: (id: number) => apiRequest<void>(`/facturen/${id}`, {
-    method: 'DELETE'
-  }),
+  create: (data: CreateInvoicePayload) => apiRequest<Invoice>('/facturen', 'POST', data),
+  update: (id: number, data: Partial<Invoice>) => apiRequest<Invoice>(`/facturen/${id}`, 'PUT', data),
+  delete: (id: number) => apiRequest<void>(`/facturen/${id}`, 'DELETE'),
   send: (id: number) => apiRequest<Invoice>(`/facturen/${id}/send`, 'POST'),
-  exportPdf: () => apiRequest<Blob>('/facturen/pdf-export', {
-    headers: {
-      'Accept': 'application/pdf'
-    }
-  })
+  exportPdf: () => apiRequest<Blob>('/facturen/pdf-export', 'GET')
 };
 
 // API functions for payroll
 export const payrollApi = {
   getAll: () => apiRequest<PayrollEntry[]>('/verloning/'),
   getById: (id: string) => apiRequest<PayrollEntry>(`/verloning/${id}`),
-  create: (data: Omit<PayrollEntry, 'id'>) => apiRequest<PayrollEntry>('/verloning/', {
-    method: 'POST',
-    body: JSON.stringify(data)
-  }),
-  update: (id: string, data: Partial<PayrollEntry>) => apiRequest<PayrollEntry>(`/verloning/${id}`, {
-    method: 'PUT',
-    body: JSON.stringify(data)
-  }),
-  delete: (id: string) => apiRequest<void>(`/verloning/${id}`, {
-    method: 'DELETE'
-  }),
+  create: (data: Omit<PayrollEntry, 'id'>) => apiRequest<PayrollEntry>('/verloning/', 'POST', data),
+  update: (id: string, data: Partial<PayrollEntry>) => apiRequest<PayrollEntry>(`/verloning/${id}`, 'PUT', data),
+  delete: (id: string) => apiRequest<void>(`/verloning/${id}`, 'DELETE'),
   export: (year: number) => apiRequest<Blob>(`/verloning/export?year=${year}`),
   getMyPayroll: (year?: number) => apiRequest<PayrollEntry[]>(`/verloning/my-payroll${year ? `?year=${year}` : ''}`),
   exportMyPayroll: (year: number) => apiRequest<Blob>(`/verloning/my-payroll/export?year=${year}`)
@@ -199,34 +159,18 @@ export const payrollApi = {
 export const locationsApi = {
   getAll: () => apiRequest<Location[]>('/locations/'),
   getById: (id: number) => apiRequest<Location>(`/locations/${id}/`),
-  create: (data: Omit<Location, 'id'>) => apiRequest<Location>('/locations/', {
-    method: 'POST',
-    body: JSON.stringify(data)
-  }),
-  update: (id: number, data: Partial<Location>) => apiRequest<Location>(`/locations/${id}/`, {
-    method: 'PUT',
-    body: JSON.stringify(data)
-  }),
-  delete: (id: number) => apiRequest<void>(`/locations/${id}/`, {
-    method: 'DELETE'
-  })
+  create: (data: Omit<Location, 'id'>) => apiRequest<Location>('/locations/', 'POST', data),
+  update: (id: number, data: Partial<Location>) => apiRequest<Location>(`/locations/${id}/`, 'PUT', data),
+  delete: (id: number) => apiRequest<void>(`/locations/${id}/`, 'DELETE')
 };
 
 // API functions for clients
 export const clientsApi = {
   getAll: () => apiRequest<Opdrachtgever[]>('/opdrachtgevers/'),
   getById: (id: number) => apiRequest<Opdrachtgever>(`/opdrachtgevers/${id}/`),
-  create: (data: Omit<Opdrachtgever, 'id'>) => apiRequest<Opdrachtgever>('/opdrachtgevers/', {
-    method: 'POST',
-    body: JSON.stringify(data)
-  }),
-  update: (id: number, data: Partial<Opdrachtgever>) => apiRequest<Opdrachtgever>(`/opdrachtgevers/${id}/`, {
-    method: 'PUT',
-    body: JSON.stringify(data)
-  }),
-  delete: (id: number) => apiRequest<void>(`/opdrachtgevers/${id}/`, {
-    method: 'DELETE'
-  })
+  create: (data: Omit<Opdrachtgever, 'id'>) => apiRequest<Opdrachtgever>('/opdrachtgevers/', 'POST', data),
+  update: (id: number, data: Partial<Opdrachtgever>) => apiRequest<Opdrachtgever>(`/opdrachtgevers/${id}/`, 'PUT', data),
+  delete: (id: number) => apiRequest<void>(`/opdrachtgevers/${id}/`, 'DELETE')
 };
 
 // API functions for dashboard
@@ -320,13 +264,8 @@ export const locationRatesApi = {
       throw error;
     }
   },
-  update: (id: number, data: Partial<LocationRate>) => apiRequest<LocationRate>(`/location-rates/${id}/`, {
-    method: 'PUT',
-    body: JSON.stringify(data)
-  }),
-  delete: (id: number) => apiRequest<void>(`/location-rates/${id}/`, {
-    method: 'DELETE'
-  }),
+  update: (id: number, data: Partial<LocationRate>) => apiRequest<LocationRate>(`/location-rates/${id}/`, 'PUT', data),
+  delete: (id: number) => apiRequest<void>(`/location-rates/${id}/`, 'DELETE'),
   getByLocation: (locationId: number) => apiRequest<LocationRate[]>(`/location-rates/location/${locationId}/`)
 };
 
@@ -334,17 +273,9 @@ export const locationRatesApi = {
 export const opdrachtgeversApi = {
   getAll: () => apiRequest<Opdrachtgever[]>('/opdrachtgevers/'),
   getById: (id: number) => apiRequest<Opdrachtgever>(`/opdrachtgevers/${id}/`),
-  create: (data: Omit<Opdrachtgever, 'id'>) => apiRequest<Opdrachtgever>('/opdrachtgevers/', {
-    method: 'POST',
-    body: JSON.stringify(data)
-  }),
-  update: (id: number, data: Partial<Opdrachtgever>) => apiRequest<Opdrachtgever>(`/opdrachtgevers/${id}/`, {
-    method: 'PUT',
-    body: JSON.stringify(data)
-  }),
-  delete: (id: number) => apiRequest<void>(`/opdrachtgevers/${id}/`, {
-    method: 'DELETE'
-  })
+  create: (data: Omit<Opdrachtgever, 'id'>) => apiRequest<Opdrachtgever>('/opdrachtgevers/', 'POST', data),
+  update: (id: number, data: Partial<Opdrachtgever>) => apiRequest<Opdrachtgever>(`/opdrachtgevers/${id}/`, 'PUT', data),
+  delete: (id: number) => apiRequest<void>(`/opdrachtgevers/${id}/`, 'DELETE')
 };
 
 // API functions for roles
@@ -353,17 +284,9 @@ export const rolesApi = {
     const response = await apiRequest<Role[]>('/roles/');
     return Array.isArray(response) ? response : [];
   },
-  create: (data: Partial<Role>) => apiRequest<Role>('/roles/', {
-    method: 'POST',
-    body: JSON.stringify(data)
-  }),
-  update: (id: number, data: Partial<Role>) => apiRequest<Role>(`/roles/${id}/`, {
-    method: 'PUT',
-    body: JSON.stringify(data)
-  }),
-  delete: (id: number) => apiRequest<void>(`/roles/${id}/`, {
-    method: 'DELETE'
-  })
+  create: (data: Partial<Role>) => apiRequest<Role>('/roles/', 'POST', data),
+  update: (id: number, data: Partial<Role>) => apiRequest<Role>(`/roles/${id}/`, 'PUT', data),
+  delete: (id: number) => apiRequest<void>(`/roles/${id}/`, 'DELETE')
 };
 
 // Chat message types
@@ -485,10 +408,7 @@ export const notificationsService = {
 export const hourIncreaseApi = {
   request: async (data: { shift_id: number; requested_end_time: string }) => {
     try {
-      return await apiRequest<HourIncreaseResponse>('/hour-increase/request', {
-        method: 'POST',
-        body: JSON.stringify(data)
-      });
+      return await apiRequest<HourIncreaseResponse>('/hour-increase/request', 'POST', data);
     } catch (error) {
       console.error('Error requesting hour increase:', error);
       throw error;
@@ -522,9 +442,7 @@ export const hourIncreaseApi = {
 
   approve: async (requestId: number) => {
     try {
-      return await apiRequest<HourIncreaseResponse>(`/hour-increase/${requestId}/approve`, {
-        method: 'POST'
-      });
+      return await apiRequest<HourIncreaseResponse>(`/hour-increase/${requestId}/approve`, 'POST');
     } catch (error) {
       console.error('Error approving hour increase request:', error);
       throw error;
@@ -533,9 +451,7 @@ export const hourIncreaseApi = {
 
   reject: async (requestId: number) => {
     try {
-      return await apiRequest<HourIncreaseResponse>(`/hour-increase/${requestId}/reject`, {
-        method: 'POST'
-      });
+      return await apiRequest<HourIncreaseResponse>(`/hour-increase/${requestId}/reject`, 'POST');
     } catch (error) {
       console.error('Error rejecting hour increase request:', error);
       throw error;

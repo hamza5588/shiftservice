@@ -59,7 +59,7 @@ export default function EditEmployee() {
       
       // Initialize form data with proper fallbacks
       setFormData({
-        employee_id: employee.employee_id,
+        employee_id: employee.id,
         personeelsnummer: employee.personeelsnummer || 0,
         naam: employee.naam || '',
         voornaam: employee.voornaam || '',

@@ -55,8 +55,15 @@ export default function NewServiceRequest() {
     queryFn: serviceRequestsApi.getAvailableShifts,
   });
 
-  // Filter shifts to only show open ones
-  const availableShifts = shifts || [];
+  // Query for user's existing requests
+  const { data: myRequests } = useQuery({
+    queryKey: ['my-service-requests'],
+    queryFn: serviceRequestsApi.getMyRequests,
+  });
+
+  // Filter shifts to only show open ones and not already requested
+  const requestedShiftIds = (myRequests || []).map(r => r.shift_id);
+  const availableShifts = (shifts || []).filter(shift => !requestedShiftIds.includes(shift.id));
 
   // Set the preselected shift when the component mounts
   useEffect(() => {
@@ -68,36 +75,57 @@ export default function NewServiceRequest() {
   // Mutation for creating service request
   const { mutate: createRequest, isLoading: isSubmitting } = useMutation({
     mutationFn: (data: FormValues) => {
-      // Find the selected shift to get its details
       const selectedShift = availableShifts.find(shift => shift.id.toString() === data.shift_id);
       if (!selectedShift) {
         throw new Error('Selected shift not found');
       }
 
-      // Create the request with all required fields
-      const requestData = {
-        id: 0, // This will be set by the backend
-        shift_id: parseInt(data.shift_id),
-        employee_id: currentUser?.username || '',
-        aanvraag_date: new Date().toISOString().split('T')[0],
-        status: 'requested',
-        shift_date: selectedShift.shift_date,
-        start_time: selectedShift.start_time,
-        end_time: selectedShift.end_time,
-        location: selectedShift.location,
-        notes: data.notes || undefined
-      };
+      const datum = String(selectedShift.shift_date?.split('T')[0] || selectedShift.shift_date);
+      const start_tijd = selectedShift.start_time;
+      const eind_tijd = selectedShift.end_time;
+      const locatie = selectedShift.location_details?.naam || selectedShift.location || '';
 
-      console.log('Submitting service request:', requestData);
+      // Defensive checks
+      if (!datum || !start_tijd || !eind_tijd || !locatie) {
+        console.error('Missing required field:', { datum, start_tijd, eind_tijd, locatie });
+        throw new Error('All fields (datum, start_tijd, eind_tijd, locatie) are required and must be valid.');
+      }
+
+      const requestData: any = {
+        shift_id: parseInt(data.shift_id)
+      };
+      if (data.notes && data.notes.trim() !== '') {
+        requestData.notes = data.notes;
+      }
+      console.log('Submitting service request:', requestData, JSON.stringify(requestData));
       return serviceRequestsApi.create(requestData);
     },
     onSuccess: () => {
       toast.success('Service request submitted successfully');
       navigate('/my-service-requests');
     },
-    onError: (error) => {
+    onError: (error: any) => {
+      let message = 'Failed to submit request: ';
+      if (error?.response) {
+        try {
+          const body = typeof error.response.data === 'string' ? JSON.parse(error.response.data) : error.response.data;
+          if (body?.detail === 'You already have an active request for this shift') {
+            message = 'You have already submitted a request for this shift.';
+          } else if (body?.detail) {
+            message += body.detail;
+          } else {
+            message += error.message || 'Unknown error';
+          }
+        } catch (e) {
+          message += error.message || 'Unknown error';
+        }
+      } else if (error instanceof Error) {
+        message += error.message;
+      } else {
+        message += 'Unknown error';
+      }
+      toast.error(message);
       console.error('Error submitting request:', error);
-      toast.error(`Failed to submit request: ${error instanceof Error ? error.message : 'Unknown error'}`);
     },
   });
 

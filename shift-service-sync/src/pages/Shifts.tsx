@@ -55,7 +55,8 @@ interface Client {
 }
 
 interface Employee {
-  employee_id: string;
+  id: number;
+  username: string;
   naam?: string;
   voornaam?: string;
   achternaam?: string;
@@ -480,7 +481,7 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
       start_time: shift.start_time,
       end_time: shift.end_time,
       location_id: shift.location_id,
-      title: shift.title,
+      titel: shift.title,
       status: shift.status || 'open',
       employee_id: shift.employee_id || null,
       reiskilometers: shift.reiskilometers || 0,
@@ -532,10 +533,11 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
     if (value === 'unassigned') {
       handleChange('employee_id', null);
     } else {
-      // Find the employee in the list to get their employee_id
-      const selectedEmployee = employees?.find(emp => emp.employee_id === value);
+      // Find the employee in the list to get their username
+      const selectedEmployee = employees?.find(emp => emp.username === value);
       console.log('Selected employee:', selectedEmployee);
-      handleChange('employee_id', selectedEmployee?.employee_id || null);
+      console.log('All employees:', employees);
+      handleChange('employee_id', selectedEmployee?.username || null);
     }
   };
 
@@ -633,17 +635,21 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
             <div className="space-y-2">
               <Label htmlFor="employee_id">Employee</Label>
               <Select 
-                value={shift.employee_id || 'unassigned'}
+                value={shift.employee_id === null ? 'unassigned' : shift.employee_id}
                 onValueChange={handleEmployeeChange}
                 disabled={isLoadingEmployees}
               >
                 <SelectTrigger id="employee_id">
-                  <SelectValue placeholder={isLoadingEmployees ? "Loading..." : "Select employee"} />
+                  <SelectValue placeholder={isLoadingEmployees ? "Loading..." : "Select employee"}>
+                    {shift.employee_id ? 
+                      employees?.find(emp => emp.username === shift.employee_id)?.naam || 'Unknown' 
+                      : 'Unassigned'}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="unassigned">Unassigned</SelectItem>
                   {employees?.map((employee) => (
-                    <SelectItem key={employee.employee_id} value={employee.employee_id}>
+                    <SelectItem key={employee.id} value={employee.username}>
                       {employee.naam || `${employee.voornaam || ''} ${employee.achternaam || ''}`}
                     </SelectItem>
                   ))}
@@ -661,6 +667,7 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
                   type="time"
                   className="pl-9"
                   required
+                  value={shift.start_time || ''}
                   onChange={(e) => handleChange('start_time', e.target.value + ':00')}
                 />
               </div>
@@ -676,6 +683,7 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
                   type="time"
                   className="pl-9"
                   required
+                  value={shift.end_time || ''}
                   onChange={(e) => handleChange('end_time', e.target.value + ':00')}
                 />
               </div>
@@ -687,6 +695,7 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
               <Input
                 id="title"
                 required
+                value={shift.title || ''}
                 onChange={(e) => handleChange('title', e.target.value)}
               />
             </div>
@@ -695,12 +704,14 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
             <div className="space-y-2">
               <Label htmlFor="required_profile">Required Profile</Label>
               <Select 
-                onValueChange={(value) => handleChange('required_profile', value)}
+                value={shift.required_profile || 'none'}
+                onValueChange={(value) => handleChange('required_profile', value === 'none' ? null : value)}
               >
                 <SelectTrigger id="required_profile">
                   <SelectValue placeholder="Select profile" />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
                   <SelectItem value="blue pass">Blue pass</SelectItem>
                   <SelectItem value="grey pass">Grey pass</SelectItem>
                 </SelectContent>
@@ -744,6 +755,7 @@ function AddShiftDialog({ open, onOpenChange, onSuccess }: AddShiftDialogProps) 
                 id="reiskilometers"
                 type="number"
                 min="0"
+                value={shift.reiskilometers ?? 0}
                 onChange={(e) => handleChange('reiskilometers', parseInt(e.target.value))}
               />
             </div>
@@ -907,15 +919,16 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
   };
 
   const handleEmployeeChange = (value: string) => {
-    console.log('Selected employee value in edit:', value);
-    
+    console.log('Selected employee value:', value);
     // If "unassigned" is selected, set employee_id to null
     if (value === 'unassigned') {
-      setSelectedEmployeeId(null);
       handleChange('employee_id', null);
     } else {
-      setSelectedEmployeeId(value);
-      handleChange('employee_id', value);
+      // Find the employee in the list to get their username
+      const selectedEmployee = employees?.find(emp => emp.username === value);
+      console.log('Selected employee:', selectedEmployee);
+      console.log('All employees:', employees);
+      handleChange('employee_id', selectedEmployee?.username || null);
     }
   };
 
@@ -923,7 +936,8 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
   useEffect(() => {
     console.log('Current selectedEmployeeId:', selectedEmployeeId);
     console.log('Current shift employee_id:', shift.employee_id);
-  }, [selectedEmployeeId, shift.employee_id]);
+    console.log('Available employees:', employees);
+  }, [selectedEmployeeId, shift.employee_id, employees]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -1021,21 +1035,21 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
             <div className="space-y-2">
               <Label htmlFor="employee_id">Employee</Label>
               <Select 
-                value={selectedEmployeeId || 'unassigned'}
+                value={shift.employee_id === null ? 'unassigned' : shift.employee_id}
                 onValueChange={handleEmployeeChange}
                 disabled={isLoadingEmployees}
               >
                 <SelectTrigger id="employee_id">
                   <SelectValue placeholder={isLoadingEmployees ? "Loading..." : "Select employee"}>
-                    {selectedEmployeeId ? 
-                      employees?.find(emp => emp.employee_id === selectedEmployeeId)?.naam || 'Unknown' 
+                    {shift.employee_id ? 
+                      employees?.find(emp => emp.username === shift.employee_id)?.naam || 'Unknown' 
                       : 'Unassigned'}
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="unassigned">Unassigned</SelectItem>
                   {employees?.map((employee) => (
-                    <SelectItem key={employee.employee_id} value={employee.employee_id}>
+                    <SelectItem key={employee.id} value={employee.username}>
                       {employee.naam || `${employee.voornaam || ''} ${employee.achternaam || ''}`}
                     </SelectItem>
                   ))}
@@ -1053,7 +1067,7 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
                   type="time"
                   className="pl-9"
                   required
-                  value={shift.start_time.slice(0, 5)}
+                  value={shift.start_time || ''}
                   onChange={(e) => handleChange('start_time', e.target.value + ':00')}
                 />
               </div>
@@ -1069,7 +1083,7 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
                   type="time"
                   className="pl-9"
                   required
-                  value={shift.end_time.slice(0, 5)}
+                  value={shift.end_time || ''}
                   onChange={(e) => handleChange('end_time', e.target.value + ':00')}
                 />
               </div>
@@ -1081,7 +1095,7 @@ function EditShiftDialog({ open, onOpenChange, onSuccess, shift: initialShift }:
               <Input
                 id="title"
                 required
-                value={shift.title}
+                value={shift.title || ''}
                 onChange={(e) => handleChange('title', e.target.value)}
               />
             </div>

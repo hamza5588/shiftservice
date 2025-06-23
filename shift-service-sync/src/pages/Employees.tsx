@@ -138,65 +138,51 @@ export default function Employees() {
           ))
         ) : employees && filteredEmployees.length > 0 ? (
           filteredEmployees.map((employee) => (
-            <Card key={employee.employee_id} className="hover:shadow-md transition-shadow">
-              <CardHeader className="pb-2">
-                <CardTitle className="flex items-center justify-between">
-                  {employee.naam || `${employee.voornaam} ${employee.achternaam}`}
-                  <Badge variant="outline" className="bg-secufy-50 text-secufy-800">
-                    {employee.pas_type || 'No Pass Type'}
-                  </Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-2">
-                  <li className="flex items-center text-sm">
-                    <Mail className="h-4 w-4 mr-2 text-muted-foreground" />
-                    <span>{employee.email}</span>
-                  </li>
-                  {employee.telefoon && (
-                    <li className="flex items-center text-sm">
-                      <Phone className="h-4 w-4 mr-2 text-muted-foreground" />
-                      <span>{employee.telefoon}</span>
-                    </li>
-                  )}
-                </ul>
-                <div className="mt-4 flex justify-end gap-2">
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={() => {
-                      if (employee.employee_id) {
-                        navigate(`/employees/${employee.employee_id}/view`);
-                      }
-                    }}
-                  >
-                    <Eye className="h-4 w-4 mr-1" /> View
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={() => {
-                      if (employee.employee_id) {
-                        console.log('Edit employee:', employee.employee_id);
-                        navigate(`/employees/${employee.employee_id}/edit`);
-                      }
-                    }}
-                  >
-                    <Pencil className="h-4 w-4 mr-1" /> Edit
-                  </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="sm"
-                    onClick={() => {
-                      if (employee.employee_id) {
-                        handleDeleteEmployee(employee.employee_id);
-                      }
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4 mr-1" /> Delete
-                  </Button>
+            <Card key={employee.id} className="hover:shadow-md transition-shadow">
+              <CardHeader>
+                <div className="flex justify-between items-start">
+                  <div>
+                    <CardTitle className="text-lg">{employee.naam}</CardTitle>
+                    <CardDescription>{employee.email}</CardDescription>
+                  </div>
+                  <div className="flex space-x-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (employee.id) {
+                          navigate(`/employees/${employee.id}/view`);
+                        }
+                      }}
+                    >
+                      View
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        if (employee.id) {
+                          console.log('Edit employee:', employee.id);
+                          navigate(`/employees/${employee.id}/edit`);
+                        }
+                      }}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      size="sm"
+                      onClick={() => {
+                        if (employee.id) {
+                          handleDeleteEmployee(employee.id);
+                        }
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  </div>
                 </div>
-              </CardContent>
+              </CardHeader>
             </Card>
           ))
         ) : (

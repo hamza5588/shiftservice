@@ -151,7 +151,7 @@ export default function Locations() {
     if (!window.confirm('Are you sure you want to delete this location?')) return;
 
     try {
-      const response = await fetch(`/api/locations/${id}`, {
+      const response = await fetch(`${API_BASE_URL}/locations/${id}/`, {
         method: 'DELETE',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`

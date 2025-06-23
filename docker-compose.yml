@@ -39,7 +39,7 @@ services:
       DATABASE_URL: mysql+pymysql://planner_user:planner_password@mysql:3306/planner_db
       SECRET_KEY: your-secret-key-here
       ALGORITHM: HS256
-      FRONTEND_URL: http://209.23.8.75
+      FRONTEND_URL: http://localhost
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
   invoice_scheduler:
@@ -62,7 +62,7 @@ services:
       context: ./shift-service-sync
       dockerfile: Dockerfile
       args:
-        VITE_API_URL: "http://209.23.8.75:8000"
+        VITE_API_URL: "http://209.23.8.75:8080"
         VITE_BASE_URL: "http://209.23.8.75"
     container_name: planner_frontend
     depends_on:
