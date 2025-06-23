@@ -20,9 +20,18 @@ export const authApi = {
     return response.data;
   },
 
-  // Add this to your existing auth API functions
+  // Fixed login function to use correct endpoint and format
   login: async (credentials: { username: string; password: string }) => {
-    const response = await api.post('/auth/login', credentials);
+    // Create form data as expected by OAuth2PasswordRequestForm
+    const formData = new FormData();
+    formData.append('username', credentials.username);
+    formData.append('password', credentials.password);
+    
+    const response = await api.post('/auth/token', formData, {
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+    });
     return response.data;
   },
 
@@ -32,7 +41,7 @@ export const authApi = {
   },
 
   getCurrentUser: async () => {
-    const response = await api.get('/auth/me');
+    const response = await api.get('/users/me');
     return response.data;
   },
 }; 
